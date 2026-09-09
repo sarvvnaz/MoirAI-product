@@ -1,0 +1,21 @@
+venv/
+.venv/
+**/__pycache__/
+*.pyc
+
+# Secrets stay in the platform's env-var settings, never in the image.
+.env
+app/.env
+
+# Local participant data — the server has its own on the persistent disk.
+app/database/app.db
+app/static/reminders/
+
+dist/
+build/
+test.py
+*.zip
+.DS_Store
+
+# ...but the extension installer IS served to participants, so keep it.
+!app/static/moirai-extension.zip

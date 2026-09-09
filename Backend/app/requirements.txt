@@ -1,0 +1,21 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+
+SQLAlchemy==2.0.34
+pydantic==2.9.2
+email-validator==2.2.0
+python-dotenv==1.0.1
+
+bcrypt==4.2.0
+python-jose[cryptography]==3.3.0
+
+# >=1.75 needed for gpt-image-1 image generation
+openai>=1.75,<2
+httpx==0.27.2
+
+# Postgres driver — unused while DATABASE_URL points at SQLite, but installed
+# so switching to Postgres is an env-var change and not an image rebuild.
+# Deliberately a range, not a pin: psycopg[binary] ships prebuilt wheels per
+# Python version, and an exact pin fails the whole install on any interpreter
+# that version has no wheel for — taking the deploy down with it.
+psycopg[binary]>=3.2,<4

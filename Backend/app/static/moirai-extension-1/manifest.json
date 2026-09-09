@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "MoirAI Study Reminder",
+  "version": "2.1",
+  "description": "Shows the participant's assigned reminder immediately after a study-time tab or window switch.",
+  "permissions": [
+    "tabs",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "externally_connectable": {
+    "matches": [
+      "http://127.0.0.1/*",
+      "http://localhost/*",
+      "https://moirai.telab.ir/*",
+      "https://moirai-fastapi.chbkn.dev/*"
+    ]
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAs4cdTc1qdQuXXblQVzK4NNO6R4XazSWqmAMB5p8FsKFiRw19ZazKGtO3pyNPqu7wgZGs4GOkta6AlvMJ50TAC3CyFExtmwB6eM8s6gn65k7TYuAZhPrsIEgZHDxiJ2tpNXC+eFgeoErU0P+xc6Z9l+5EHGSIIvEAUOE5/TN1vvbG6jad+7dLU49S/m9XaZuzEHhc5FEh+kKLEBOLnE26uF4WPro9ckWRy4ijYG4j8VIjwlxPrTkgI57CnZgvMCO1i97HFSWBP4QsVS5aMJUJfgsBuRf/SZPccwDmbMFJw8/BsiNB8oYOhtSOdjcg7NrEOyRmMaAAWdF/z6xBAkWegwIDAQAB"
+}

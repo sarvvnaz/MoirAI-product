@@ -1,0 +1,34 @@
+{
+  "title": "Choose Your Language",
+  "english": "English",
+  "persian": "فارسی",
+  
+  "goal.question.1": "What is one important long-term goal you want to achieve?",
+  "goal.hint.1": "Example: Finish my degree, build a strong resume, immigrate to the Netherlands, write a book",
+  
+  "goal.question.2": "Why is this goal personally important to you? (Focus on your emotions)",
+  "goal.hint.2": "Example: It helps me feel more independent and capable",
+  
+  "goal.question.3": "When would you like to achieve this goal? (The more specific, the better)",
+  "goal.hint.3": "Example: By the end of this year, in six months, before I turn 30",
+  
+  "goal.question.4": "If you succeed in this goal, how will your life be different?",
+  "goal.hint.4": "Example: I’ll have more freedom and confidence in my career path",
+  
+  "goal.question.5": "What obstacle might get in your way?",
+  "goal.hint.5": "Example: I might get distracted easily or be afraid of failing",
+  
+  "goal.question.6": "Now imagine it's the future and you’ve achieved your goal. What do you see, feel, or hear?",
+  "goal.hint.6": "Example: I see myself smiling on the streets of the Netherlands, receiving praise from my professor, or celebrating getting an acceptance email from a university or job offer",
+  
+  "goal.question.7": "What might happen if you give up and let go of this goal?",
+  "goal.hint.7": "Example: I might waste a year preparing again, feel deep regret, or become disappointed in myself and let my family down.",
+
+  "Create Your Profile": "Create Your Profile",
+  "Username": "Username",
+  "Password": "Password",
+  "Add a Goal": "Add a Goal",
+  "Please enter a username": "Please enter a username",
+  "Please enter a password": "Please enter a password",
+  "This field is required": "This field is required"
+}

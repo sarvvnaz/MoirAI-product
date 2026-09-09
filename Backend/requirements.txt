@@ -1,0 +1,4 @@
+# Deploy-root requirements file. Hosting platforms that auto-detect a Python
+# app install from the root and would otherwise find nothing to install.
+# The real list is kept in app/requirements.txt — edit that one.
+-r app/requirements.txt

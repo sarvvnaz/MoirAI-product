@@ -1,0 +1,6 @@
+This directory exists so /app/data is present the moment the code is
+deployed, before the app starts — a permanent path (مسیر دائمی) is easier to
+register against a directory that already exists.
+
+Everything written here at runtime (the SQLite database, generated reminder
+images) is participant data and is gitignored. Only this file is tracked.
