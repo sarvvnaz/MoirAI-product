@@ -22,7 +22,6 @@ class _BaselineProfilePageState extends State<BaselineProfilePage> {
   String? _gender;
   String? _educationLevel;
   String? _studyField;
-  String? _englishGoal;
   String? _englishLevel;
   String? _studyFrequency;
 
@@ -35,7 +34,6 @@ class _BaselineProfilePageState extends State<BaselineProfilePage> {
     if (_gender == null) return 'جنسیت';
     if (_educationLevel == null) return 'مقطع تحصیلی';
     if (_studyField == null) return 'رشته یا زمینه';
-    if (_englishGoal == null) return 'هدف یادگیری زبان';
     if (_englishLevel == null) return 'سطح زبان';
     if (_studyFrequency == null) return 'میزان مطالعه';
     return null;
@@ -57,7 +55,6 @@ class _BaselineProfilePageState extends State<BaselineProfilePage> {
         'gender': _gender,
         'education_level': _educationLevel,
         'study_field': _studyField,
-        'english_goal': _englishGoal,
         'english_level': _englishLevel,
         'study_frequency': _studyFrequency,
       });
@@ -186,19 +183,6 @@ class _BaselineProfilePageState extends State<BaselineProfilePage> {
                 DropdownMenuItem(value: 'سایر', child: Text('سایر')),
               ],
               onChanged: (v) => setState(() => _studyField = v),
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              initialValue: _englishGoal,
-              decoration: _decoration('هدف یادگیری زبان'),
-              items: const [
-                DropdownMenuItem(value: 'IELTS', child: Text('آیلتس')),
-                DropdownMenuItem(value: 'TOEFL', child: Text('تافل')),
-                DropdownMenuItem(
-                    value: 'General English', child: Text('یادگیری عمومی')),
-                DropdownMenuItem(value: 'Other', child: Text('سایر')),
-              ],
-              onChanged: (v) => setState(() => _englishGoal = v),
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(

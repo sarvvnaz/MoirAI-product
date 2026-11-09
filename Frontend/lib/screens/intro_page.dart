@@ -69,7 +69,7 @@ class _IntroPageState extends State<IntroPage> {
           SizedBox(height: 14),
           Text(
             'مویرای یک تجربه‌ی کوتاهه که توش با کمک هوش مصنوعی تصویر روشنی '
-            'از آینده‌ت می‌سازی و تأثیرش رو روی یادگیری انگلیسی می‌بینی.',
+            'از آینده‌ت می‌سازی و تأثیرش رو روی کاری که برات مهمه می‌بینی.',
             style: TextStyle(fontSize: 16, height: 2.0, color: AppColors.navy),
           ),
           SizedBox(height: 24),

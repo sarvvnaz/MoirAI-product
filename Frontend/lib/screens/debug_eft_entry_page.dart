@@ -186,7 +186,7 @@ class _DebugEftEntryPageState extends State<DebugEftEntryPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _field('۱. چه هدفی در یادگیری انگلیسی داری؟', _goal),
+                      _field('۱. چه هدف بلندمدتی داری؟', _goal),
                       _field('۲. در آن لحظه‌ی موفقیت کجا هستی؟', _where),
                       _field('۳. کی این اتفاق می‌افتد؟', _when),
                       _field('۴. دقیقاً چه کاری انجام می‌دهی؟', _action),

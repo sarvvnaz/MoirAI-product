@@ -28,8 +28,8 @@ class _ManualEftEntryPageState extends State<ManualEftEntryPage> {
   static const List<_ManualQuestion> _questions = [
     _ManualQuestion(
       key: 'goal',
-      label: '۱. هدف انگلیسیت چیه؟',
-      hint: 'مثلاً قبولی توی آزمون، مهاجرت، تحصیل یا کار، یا مکالمه‌ی روان',
+      label: '۱. هدف بلندمدتت چیه؟',
+      hint: 'مثلاً پیشرفت در کار، تحصیل، یا یک پروژه‌ی شخصی',
     ),
     _ManualQuestion(
       key: 'where',
