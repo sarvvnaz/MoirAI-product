@@ -1,16 +1,22 @@
 import 'dart:async';
+import 'dart:typed_data';
+import 'pdf_upload_page.dart';
+import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import 'package:flutter/material.dart';
 import '../data/quiz_questions.dart';
 import '../data/readings.dart';
 import '../data/study_steps.dart';
 import '../services/api_service.dart';
+import '../services/flow_router.dart';
 import '../services/idle_detector.dart';
+import '../services/study_config.dart';
 import '../theme/app_colors.dart';
+import '../widgets/exam_split_view.dart';
+import '../widgets/study_shell_metrics.dart';
 import '../widgets/study_scaffold.dart';
 // The closing measure is the final feedback page again — the IMMS/TAM
 // kept in the codebase so the old measures can be restored.
-import 'final_feedback_page.dart';
-import 'measures_page.dart';
+// import 'measures_page.dart';
 
 /// The study session step:
 ///  1. A 5-second breathing countdown with friendly, no-pressure framing.
@@ -18,28 +24,35 @@ import 'measures_page.dart';
 ///  3. Submitting the quiz finishes the session → offer an optional second
 ///     session, otherwise continue to final feedback.
 ///
-/// Idle (90s) and tab-switch detection run during the session (work step 7:
-/// detection only — persistence comes later).
+/// Idle and tab-switch detection run during the session and ARE persisted:
+/// they are outcome measures now, not incidental logging. The idle threshold
+/// is a study parameter — see [StudyConfig].
 class StudySessionPage extends StatefulWidget {
   final int userId;
-  const StudySessionPage({super.key, required this.userId});
+  final Uint8List? pdfBytes;
+  final String? pdfName;
+  const StudySessionPage({super.key, required this.userId, this.pdfBytes, this.pdfName});
 
   @override
   State<StudySessionPage> createState() => _StudySessionPageState();
 }
 
 class _StudySessionPageState extends State<StudySessionPage> {
-  // TODO(pre-pilot): restore to 90s for the real study. 10s for debugging.
-  static const Duration idleThreshold = Duration(seconds: 10);
+  /// Study parameter — see [StudyConfig]. Not to be edited here.
+  static Duration get idleThreshold => StudyConfig.idleThreshold;
 
   // ── breathing countdown ──
   int _countdown = 5;
   bool _inCountdown = true;
   Timer? _countdownTimer;
 
-  /// Time allowed per reading part. When it runs out the participant is
-  /// moved on automatically — they can also skip forward at any moment.
-  static const Duration readingTimeLimit = Duration(minutes: 20);
+  /// The reading window. One session, one window — see [StudyConfig].
+  ///
+  /// The countdown is deliberately VISIBLE: at this pace it is fidelity to
+  /// real IELTS conditions, and the mild time pressure is what makes the task
+  /// aversive enough for natural disengagement to occur at all. Without any
+  /// pressure the primary measures have no variance to explain.
+  static Duration get readingTimeLimit => StudyConfig.readingWindow;
 
   // ── session state ──
   int _sessionNumber = 1;
@@ -63,10 +76,12 @@ class _StudySessionPageState extends State<StudySessionPage> {
   TextEditingController _gapController(String id) =>
       _gapControllers.putIfAbsent(id, () => TextEditingController());
 
-  // ── in-app idle reminder (steps 9-10) ──
-  // The full set (up to 3 images); overlays rotate through it.
-  List<Map<String, dynamic>> _reminderSet = [];
-  int _reminderIdx = 0;
+  // ── the cue currently on screen ──
+  // Set from the SERVER's grant, never chosen here. The server maps slot 1 to
+  // asset 1 and slot 2 to asset 2, identically for every participant; a
+  // client-side rotation used to pick as well, which is two sources of truth
+  // for which stimulus a participant saw. When those disagree the export
+  // records one and the participant saw the other, and nothing looks wrong.
   String? _reminderImageUrl;
   String? _reminderCue;
   bool _showIdleReminder = false;
@@ -76,17 +91,41 @@ class _StudySessionPageState extends State<StudySessionPage> {
   // so an extension that was (re)loaded after session start still gets armed.
   Timer? _extensionHeartbeat;
 
-  /// Advances the rotation and sets the current image/cue.
-  bool _rotateReminder() {
-    if (_reminderSet.isEmpty) return false;
-    final asset = _reminderSet[_reminderIdx % _reminderSet.length];
-    _reminderIdx++;
-    final raw = (asset['image_url'] as String?) ?? '';
-    if (raw.isEmpty) return false;
-    _reminderImageUrl = ApiService.resolveBackendUrl(raw);
-    _reminderCue = asset['cue'] as String?;
-    return true;
-  }
+  // ── scheduled cues ──
+  // Polls the SERVER for whether a slot is due. The app never decides this:
+  // once its tab is hidden the browser throttles these timers, which is
+  // exactly the state where a cue matters most, so the extension covers that
+  // case and this covers the visible case.
+  Timer? _cuePoll;
+
+  /// The corner card — the one new cue form. Shown when the slot opens while
+  /// the participant is actively reading: non-blocking, so it reinforces the
+  /// goal without breaking an active reading strategy.
+  bool _showCornerCard = false;
+  Timer? _cornerCardTimer;
+
+  /// Delivery id of the cue currently on screen, for interaction reporting.
+  int? _activeDeliveryId;
+
+  /// True while a disengagement episode is open on the server, so start/end
+  /// stay paired even if idle and tab-switch both fire.
+  bool _episodeOpen = false;
+
+  /// One controller per pane: the exam layout scrolls the passage and the
+  /// questions independently, which is the point of the split view.
+  final ScrollController _passageScroll = ScrollController();
+  final ScrollController _questionScroll = ScrollController();
+
+  /// Idle, but still on the study tab. Decides between the corner card and
+  /// the existing centred overlay when a slot opens.
+  bool _idleNow = false;
+
+  /// The study tab is not in front. While this is true the cue belongs to the
+  /// EXTENSION, and this client must not claim it: the app's timers keep
+  /// firing (throttled) even when hidden, and a claim from here would be
+  /// recorded as `active` — silently moving an off-tab cue into the wrong
+  /// primary measure, where nothing about its value would look wrong.
+  bool _awayFromTab = false;
 
   @override
   void initState() {
@@ -100,6 +139,10 @@ class _StudySessionPageState extends State<StudySessionPage> {
     _idleReminderTimer?.cancel();
     _extensionHeartbeat?.cancel();
     _partTimer?.cancel();
+    _cuePoll?.cancel();
+    _cornerCardTimer?.cancel();
+    _passageScroll.dispose();
+    _questionScroll.dispose();
     for (final c in _gapControllers.values) {
       c.dispose();
     }
@@ -154,69 +197,157 @@ class _StudySessionPageState extends State<StudySessionPage> {
       } catch (_) {}
     });
 
-    _startPartTimer();
-
-    // Fetch the reminder set for the in-app idle overlay (rotates).
+    // Opens the SERVER's clock for this reading window and schedules both
+    // cues. Must happen before the poll starts, or the first few polls answer
+    // "reading not started" for no reason.
     try {
-      final set = await ApiService.getReminderSet();
-      if (mounted && set.isNotEmpty) {
-        setState(() {
-          _reminderSet = set;
-          _rotateReminder();
-        });
-        debugPrint('🖼 in-app reminder set ready: ${set.length} asset(s)');
-      }
+      await ApiService.startReading();
     } catch (e) {
-      debugPrint('⚠️ could not fetch in-app reminder set: $e');
+      debugPrint('⚠️ could not open the reading window: $e');
+    }
+
+    _startPartTimer();
+    _startCuePolling();
+
+    // Nothing is prefetched here on purpose. The cue arrives with the
+    // server's grant, so there is no set to hold and no rotation to keep in
+    // step with the server's own slot -> asset mapping.
+  }
+
+  // ──────────────────────────────────────────────────────────────────
+  // Scheduled cues
+  // ──────────────────────────────────────────────────────────────────
+
+  /// Asks the server every few seconds whether a slot is open.
+  ///
+  /// Only while the tab is VISIBLE. A hidden tab is the extension's job, and
+  /// polling from a throttled timer would produce cues that arrive late and
+  /// are attributed to the wrong attentional state.
+  void _startCuePolling() {
+    _cuePoll?.cancel();
+    _cuePoll = Timer.periodic(StudyConfig.cuePollInterval, (_) async {
+      if (!mounted || _showCornerCard || _showIdleReminder) return;
+      if (_awayFromTab) return; // the extension owns the off-tab case
+      final due = await ApiService.cueDue();
+      final slot = (due?['due_slot'] as num?)?.toInt();
+      if (slot == null || !mounted) return;
+      await _deliverScheduledCue();
+    });
+  }
+
+  /// Claims the open slot and renders it in the form the current state calls
+  /// for. The STATE decides the form — that is the whole point of the design:
+  ///
+  ///   active → corner card    (do not interrupt someone who is reading)
+  ///   idle   → the existing centred overlay, unchanged
+  ///
+  /// The off-tab case never reaches here; the extension owns it.
+  Future<void> _deliverScheduledCue() async {
+    final state = _idleNow ? 'idle' : 'active';
+
+    final grant = await ApiService.claimCue(state);
+    if (grant == null || grant['granted'] != true || !mounted) return;
+
+    final asset = (grant['asset'] as Map?) ?? const {};
+    final raw = (asset['image_url'] as String?) ?? '';
+    if (raw.isEmpty) {
+      debugPrint('⚠️ cue granted with no image — nothing to show');
+      return;
+    }
+    _reminderImageUrl = ApiService.resolveBackendUrl(raw);
+    _reminderCue = asset['cue'] as String?;
+    _activeDeliveryId = (grant['delivery_id'] as num?)?.toInt();
+
+    setState(() {
+      if (state == 'idle') {
+        _showIdleReminder = true;
+      } else {
+        _showCornerCard = true;
+      }
+    });
+
+    if (_activeDeliveryId != null) {
+      await ApiService.cueShown(_activeDeliveryId!);
+    }
+    debugPrint('🔔 scheduled cue slot ${grant['slot']} shown as '
+        '${grant['form']} (state=$state)');
+
+    // The corner card is non-blocking, so it takes itself away. The idle
+    // overlay keeps its existing dismissal behaviour.
+    if (state == 'active') {
+      _cornerCardTimer?.cancel();
+      _cornerCardTimer = Timer(const Duration(seconds: 12), _dismissCornerCard);
+    } else {
+      _idleReminderTimer?.cancel();
+      _idleReminderTimer =
+          Timer(const Duration(seconds: 7), () => _dismissIdleReminder());
     }
   }
 
-  /// Step 9: idle for 90s → show the participant's EFT image inside the app.
-  /// Self-contained: if the reminder wasn't loaded at session start, it is
-  /// fetched here — the in-app overlay never depends on the extension.
-  Future<void> _onIdle() async {
-    if (!mounted || _showIdleReminder) return;
-
-    if (_reminderSet.isEmpty) {
-      debugPrint('🔔 idle fired but reminder set not loaded — fetching now');
-      try {
-        _reminderSet = await ApiService.getReminderSet();
-      } catch (e) {
-        debugPrint('⚠️ reminder fetch on idle failed: $e');
-      }
-      if (_reminderSet.isEmpty) {
-        debugPrint('⚠️ no reminder available — in-app overlay skipped');
-        return;
-      }
+  void _dismissCornerCard({bool tapped = false}) {
+    _cornerCardTimer?.cancel();
+    if (!mounted || !_showCornerCard) return;
+    setState(() => _showCornerCard = false);
+    final id = _activeDeliveryId;
+    if (id != null && tapped) {
+      ApiService.cueInteraction(id, dismissed: true);
     }
-    // Rotate to the next image in the set for this trigger.
-    if (!_rotateReminder()) return;
-
-    if (!mounted) return;
-    setState(() => _showIdleReminder = true);
-    debugPrint('🔔 [detected] in-app idle reminder shown');
-    // Step 11: one research event row per idle trigger, written immediately.
-    ApiService.researchTrigger('idle', reminderShown: true);
-    _idleReminderTimer?.cancel();
-    _idleReminderTimer =
-        Timer(const Duration(seconds: 7), () => _dismissIdleReminder());
   }
 
   void _dismissIdleReminder({bool tapped = false}) {
     _idleReminderTimer?.cancel();
     if (mounted && _showIdleReminder) {
       setState(() => _showIdleReminder = false);
-      if (tapped) {
-        // Tapping the overlay away counts as an explicit dismissal + return.
-        ApiService.researchReturn(dismissed: true);
+      final id = _activeDeliveryId;
+      if (id != null && tapped) {
+        ApiService.cueInteraction(id, dismissed: true);
       }
     }
+  }
+
+  // ──────────────────────────────────────────────────────────────────
+  // Disengagement telemetry — the OUTCOME measures
+  // ──────────────────────────────────────────────────────────────────
+
+  /// Idle no longer shows anything by itself. It opens an episode.
+  ///
+  /// That inversion is the redesign: under the old protocol a reminder fired
+  /// because the participant disengaged, which made the cue impossible to use
+  /// as a predictor of disengagement. Now the cue is on a fixed clock and
+  /// this is simply the outcome being recorded.
+  Future<void> _onIdle() async {
+    if (!mounted) return;
+    _idleNow = true;
+    if (_episodeOpen) return;
+    _episodeOpen = true;
+    await ApiService.disengagementStart('idle');
+  }
+
+  /// Tab switch away from the study → an episode opens.
+  void _onFocusLost() {
+    _awayFromTab = true;
+    if (_episodeOpen) return;
+    _episodeOpen = true;
+    ApiService.disengagementStart('tab_switch');
+  }
+
+  /// Back at the reading. Closes the episode, which is also where the server
+  /// resolves return latency if a cue was delivered during the absence.
+  void _onFocusReturn() {
+    _dismissIdleReminder();
+    _idleNow = false;
+    _awayFromTab = false;
+    if (!_episodeOpen) return;
+    _episodeOpen = false;
+    ApiService.disengagementEnd(endedBy: 'return');
   }
 
   /// Starts the 25-minute clock for this reading part. When it expires the
   /// participant is carried on automatically (nothing is lost — whatever
   /// they answered is submitted and the time spent is logged).
   void _startPartTimer() {
+    // A personal PDF is not a timed exam.
+    if (widget.pdfBytes != null) return;
     _readingStartedAt = DateTime.now();
     _partTimer?.cancel();
     setState(() => _remaining = readingTimeLimit);
@@ -240,6 +371,8 @@ class _StudySessionPageState extends State<StudySessionPage> {
     if (_finishing) return;
     _finishing = true;
     _partTimer?.cancel();
+    _cuePoll?.cancel();
+    _cornerCardTimer?.cancel();
 
     final seconds = _elapsedSeconds;
     final answered = _questions.where(_isAnswered).length;
@@ -251,11 +384,15 @@ class _StudySessionPageState extends State<StudySessionPage> {
         'reason': reason,
         'seconds_spent': seconds,
         'time_limit_seconds': readingTimeLimit.inSeconds,
-        'questions_answered': answered,
-        'questions_total': _questions.length,
+        if (widget.pdfBytes == null) 'questions_answered': answered,
+        if (widget.pdfBytes == null) 'questions_total': _questions.length,
       });
+      // Closes any open disengagement episode and writes off any slot that
+      // never delivered. Without this an episode that ran to the end of the
+      // session keeps a NULL duration and drops out of time-on-task —
+      // biased in favour of whoever disengaged last.
+      await ApiService.endReading();
       await ApiService.endSession();
-      await ApiService.researchSessionClosed();
     } catch (_) {
       // Logging must never trap the participant mid-study.
     }
@@ -272,7 +409,7 @@ class _StudySessionPageState extends State<StudySessionPage> {
     if (reason == 'time_up') {
       _showTimeUpDialog();
     } else {
-      _askAnotherSession();
+      _goToPostTaskMeasures();
     }
   }
 
@@ -304,13 +441,7 @@ class _StudySessionPageState extends State<StudySessionPage> {
                 Navigator.of(ctx).pop();
                 Navigator.of(context).pushReplacement(
                   MaterialPageRoute(
-                    builder: (_) => MeasuresPage(
-                      userId: widget.userId,
-                      timepoint: _sessionNumber == 1 ? 'session1' : 'session2',
-                      title: 'درباره‌ی یادآورهای این جلسه',
-                      step: StudyStep.study,
-                      nextPage: () => FinalFeedbackPage(userId: widget.userId),
-                    ),
+                    builder: (_) => FlowGate(userId: widget.userId),
                   ),
                 );
               },
@@ -366,28 +497,29 @@ class _StudySessionPageState extends State<StudySessionPage> {
       ? _gapController(q.id).text.trim().isNotEmpty
       : _answers.containsKey(q.id);
 
-  /// Step 11: tab switch away from the study → trigger row.
-  void _onFocusLost() {
-    ApiService.researchTrigger('tab_switch');
-  }
+  /// Every question in the session, in passage order.
+  ///
+  /// Ids are unique across passages (s1q*, s2q*), so concatenating is safe
+  /// and the answer map stays keyed correctly.
+  List<QuizQuestion> get _questions => [
+        for (final id in StudyConfig.sessionPassages)
+          ...(quizQuestionsBySession[id] ?? const []),
+      ];
 
-  /// Back at the reading (after idle activity resumes, or tab refocus).
-  void _onFocusReturn() {
-    _dismissIdleReminder();
-    ApiService.researchReturn();
-  }
+  /// The passages shown, in order, in one continuous scroll.
+  List<ReadingPassage> get _readings => [
+        for (final id in StudyConfig.sessionPassages)
+          if (readingsBySession[id] != null) readingsBySession[id]!,
+      ];
 
-  List<QuizQuestion> get _questions =>
-      quizQuestionsBySession[_sessionNumber] ??
-      quizQuestionsBySession[1] ??
-      const [];
+  ReadingPassage get _reading => _readings.isNotEmpty
+      ? _readings.first
+      : readingsBySession[1]!;
 
-  ReadingPassage get _reading =>
-      readingsBySession[_sessionNumber] ?? readingsBySession[1]!;
-
-  /// Sessions escalate 1→3 in difficulty; after the third there is no
-  /// harder material, so the "another session?" offer stops.
-  static const int _maxSessions = 3;
+  /// ONE session. The protocol is a single 35-minute reading window with two
+  /// scheduled cues; a second session would give those participants four,
+  /// breaking the equal-dosage guarantee the design rests on.
+  static const int _maxSessions = 1;
 
   Future<void> _submitQuiz() async {
     final unanswered = _questions.where((q) => !_isAnswered(q));
@@ -442,82 +574,37 @@ class _StudySessionPageState extends State<StudySessionPage> {
     await _finishPart('submitted');
   }
 
-  void _askAnotherSession() {
-    // All readings done → no more sessions to offer.
-    if (_sessionNumber >= _maxSessions) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => MeasuresPage(
-                      userId: widget.userId,
-                      timepoint: _sessionNumber == 1 ? 'session1' : 'session2',
-                      title: 'درباره‌ی یادآورهای این جلسه',
-                      step: StudyStep.study,
-                      nextPage: () => FinalFeedbackPage(userId: widget.userId),
-                    ),
-        ),
-      );
-      return;
-    }
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          backgroundColor: Colors.white,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          title: const Text('آفرین، این جلسه تمام شد 🎉',
-              style: TextStyle(color: AppColors.navy, fontSize: 19)),
-          content: const Text(
-            'دوست داری یک جلسه‌ی مطالعه‌ی دیگر هم انجام بدهی؟ کاملاً اختیاری است.',
-            style:
-                TextStyle(fontSize: 15, height: 1.8, color: AppColors.navy),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                Navigator.of(context).pushReplacement(
-                  MaterialPageRoute(
-                    builder: (_) => MeasuresPage(
-                      userId: widget.userId,
-                      timepoint: _sessionNumber == 1 ? 'session1' : 'session2',
-                      title: 'درباره‌ی یادآورهای این جلسه',
-                      step: StudyStep.study,
-                      nextPage: () => FinalFeedbackPage(userId: widget.userId),
-                    ),
-                  ),
-                );
-              },
-              child: const Text('نه، برویم مرحله آخر',
-                  style: TextStyle(color: AppColors.navy)),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.purple,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-              ),
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                setState(() {
-                  _answers.clear();
-                });
-                _startCountdown();
-              },
-              child: const Text('بله، یک جلسه دیگر',
-                  style: TextStyle(color: Colors.white)),
-            ),
-          ],
-        ),
-      ),
+  /// One session, so there is never another to offer — this goes straight to
+  /// the post-task battery. Kept as a single call site rather than inlined so
+  /// the two exit paths (submitted, time_up) stay identical.
+  /// One session, so there is never another to offer. Goes straight to the
+  /// post-task battery.
+  ///
+  /// The "would you like another session?" offer is gone deliberately: a
+  /// second session would give that participant four cues instead of two,
+  /// and equal dosage across arms is the claim the whole redesign rests on.
+  /// Hands the participant back to the server rather than naming the next
+  /// screen here.
+  ///
+  /// Two things went wrong when this pushed the questionnaire directly. It
+  /// sent the participant straight on to the old slider page afterwards,
+  /// SKIPPING the open-ended feedback block entirely — three questions that
+  /// simply never got asked. And it titled the page «درباره‌ی یادآورهای این
+  /// جلسه», which announces that the study is about the reminders on a page
+  /// whose FIRST items are the primary task-goal outcome. That outcome is
+  /// asked before anything mentions reminders precisely so the participant
+  /// does not yet know what is being studied; a title naming them gives it
+  /// away before the first question is read.
+  void _goToPostTaskMeasures() {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => FlowGate(userId: widget.userId)),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return StudyScaffold(
+      wide: true,
       currentStep: StudyStep.study,
       child: _inCountdown ? _buildCountdown() : _buildSession(),
     );
@@ -553,9 +640,9 @@ class _StudySessionPageState extends State<StudySessionPage> {
             ),
             const SizedBox(height: 14),
             const Text(
-              'حالا یک متن کوتاه انگلیسی می‌خونی و بعدش چند سوال جواب می‌دی.\n'
-              'مثل همیشه‌ی خودت رفتار کن — اگه حواست پرت شد، اشکالی نداره!\n'
-              'نه تمرکز کامل جایزه داره و نه پاسخ درست هدف ماست. راحت باش 🙂',
+              'با ریتم خودت پیش برو.\n'
+              ''
+              'هر وقت خواستی، تمامش کن.',
               textAlign: TextAlign.center,
               style: TextStyle(
                   fontSize: 15.5, height: 2.0, color: AppColors.navy),
@@ -573,7 +660,68 @@ class _StudySessionPageState extends State<StudySessionPage> {
         _buildSessionContent(),
         if (_showIdleReminder && _reminderImageUrl != null)
           _buildIdleReminderOverlay(),
+        if (_showCornerCard && _reminderImageUrl != null) _buildCornerCard(),
       ],
+    );
+  }
+
+  /// The corner card: the cue form for a participant who IS reading.
+  ///
+  /// Deliberately small, non-modal and top-aligned. It does not take focus,
+  /// does not block scrolling and does not move the page, because the whole
+  /// point of the state check is to avoid interrupting active reading — an
+  /// interruption here would degrade the usability scores and contaminate the
+  /// retention measure it exists to produce.
+  Widget _buildCornerCard() {
+    return Positioned(
+      top: 16,
+      right: 16,
+      child: Material(
+        color: Colors.transparent,
+        child: GestureDetector(
+          onTap: () => _dismissCornerCard(tapped: true),
+          child: Container(
+            width: 260,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppColors.purple.withOpacity(0.35)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.12),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Image.network(
+                    _reminderImageUrl!,
+                    height: 120,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                  ),
+                ),
+                if ((_reminderCue ?? '').isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    _reminderCue!,
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(
+                        fontSize: 12.5, height: 1.7, color: AppColors.navy),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -625,150 +773,232 @@ class _StudySessionPageState extends State<StudySessionPage> {
     );
   }
 
+  /// Below this width the two panes stack instead of sitting side by side.
+  /// A split pane on a narrow screen gives two unusably thin columns, and the
+  /// reading task is the thing being measured — it must not be degraded by
+  /// the layout on whatever device the participant happens to bring.
+  static const double _splitBreakpoint = StudyShellMetrics.splitBreakpoint;
+
   Widget _buildSessionContent() {
     return IdleDetector(
       userId: widget.userId,
       idleThreshold: idleThreshold,
+      logSink: ApiService.logEvent,
       onIdle: _onIdle,
       onFocusLost: _onFocusLost,
       onFocusReturn: _onFocusReturn,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'جلسه مطالعه ${_sessionNumber > 1 ? '$_sessionNumber از $_maxSessions ' : ''}📖',
-              style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.navy),
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'متن را بخوان و بعد به سوالات پایین صفحه پاسخ بده.',
-              style: TextStyle(fontSize: 13.5, color: AppColors.navy),
-            ),
-            const SizedBox(height: 12),
-            // _buildTimeBanner(),
-            // const SizedBox(height: 12),
-            // Fixed-height reading pane (scrolls internally); the page
-            // itself scrolls on to the questions below.
-            Container(
-              height: 460,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: Directionality(
-                textDirection: TextDirection.ltr,
-                child: Scrollbar(
-                  thumbVisibility: true,
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(28, 24, 28, 32),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Reading Passage $_sessionNumber',
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            letterSpacing: 1.1,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.navy.withOpacity(0.55),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          _reading.title,
-                          style: const TextStyle(
-                            fontSize: 21,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.navy,
-                            height: 1.4,
-                          ),
-                        ),
-                        if (_reading.subtitle.isNotEmpty) ...[
-                          const SizedBox(height: 6),
-                          Text(
-                            _reading.subtitle,
-                            style: TextStyle(
-                              fontSize: 14,
-                              height: 1.6,
-                              fontStyle: FontStyle.italic,
-                              color: AppColors.navy.withOpacity(0.8),
-                            ),
-                          ),
-                        ],
-                        if (_reading.source.isNotEmpty) ...[
-                          const SizedBox(height: 8),
-                          Text(
-                            'Source: ${_reading.source}',
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              height: 1.5,
-                              color: AppColors.navy.withOpacity(0.5),
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 10),
-                        Text(
-                          _reading.instructions,
-                          style: TextStyle(
-                            fontSize: 13,
-                            height: 1.6,
-                            fontStyle: FontStyle.italic,
-                            color: AppColors.navy.withOpacity(0.75),
-                          ),
-                        ),
-                        const Divider(height: 28),
-                        SelectableText(
-                          _reading.body.trim(),
-                          style: const TextStyle(
-                            fontSize: 15.5,
-                            height: 1.85,
-                            color: AppColors.navy,
-                          ),
-                        ),
-                      ],
-                    ),
+      child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (widget.pdfBytes != null)
+                  Text(widget.pdfName ?? 'فایل تو', style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.navy))
+                else
+                  _buildTimeBanner(),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: widget.pdfBytes != null ? SfPdfViewer.memory(
+                    widget.pdfBytes!,
+                    onDocumentLoadFailed: (details) {
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text('فایل باز نشد. فایل ممکن است آسیب‌دیده یا رمزدار باشد.'), action: SnackBarAction(label: 'انتخاب مجدد', onPressed: () => Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => PdfUploadPage(userId: widget.userId))))));
+                    },
+                  ) : ExamSplitView(
+                    questionsPane: _buildQuestionsPane(),
+                    passagePane: _buildPassagePane(),
+                    breakpoint: _splitBreakpoint,
                   ),
                 ),
-              ),
+                const SizedBox(height: 12),
+                if (widget.pdfBytes != null)
+                  StudyPrimaryButton(label: 'پایان مطالعه', onPressed: _finishing ? null : () => _finishPart('submitted'))
+                else
+                  _buildSessionFooter(),
+              ],
             ),
-            const SizedBox(height: 24),
-            const Text(
-              'سوالات ✍️',
-              style: TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.navy),
+      ),
+    );
+  }
+
+  Widget _paneBox({required Widget child}) => Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.purple.withOpacity(0.18)),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: child,
+      );
+
+  /// The reading pane. Both passages run in one continuous scroll, each with
+  /// its own exam-style header, as in the real computer-delivered test.
+  Widget _buildPassagePane() {
+    final readings = _readings;
+    return _paneBox(
+      child: Directionality(
+        textDirection: TextDirection.ltr,
+        child: Scrollbar(
+          controller: _passageScroll,
+          thumbVisibility: true,
+          child: SingleChildScrollView(
+            controller: _passageScroll,
+            padding: const EdgeInsets.fromLTRB(26, 22, 26, 32),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var i = 0; i < readings.length; i++) ...[
+                  if (i > 0) const Divider(height: 46, thickness: 1.2),
+                  _buildPassageBody(readings[i], i + 1),
+                ],
+              ],
             ),
-            const SizedBox(height: 8),
-            ..._questions.map(_buildQuestion),
-            const SizedBox(height: 10),
-            StudyPrimaryButton(
-              label: 'ثبت پاسخ‌ها و پایان جلسه',
-              busy: _submitting,
-              onPressed: _submitQuiz,
-            ),
-            const SizedBox(height: 10),
-            Center(
-              child: TextButton(
-                onPressed: _submitting ? null : _skipPart,
-                child: Text(
-                  'رد کردن و رفتن به مرحله‌ی بعد ←',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: AppColors.purple.withOpacity(0.85),
-                  ),
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
+    );
+  }
+
+  Widget _buildPassageBody(ReadingPassage r, int ordinal) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'READING PASSAGE $ordinal',
+          style: TextStyle(
+            fontSize: 12,
+            letterSpacing: 1.2,
+            fontWeight: FontWeight.w700,
+            color: AppColors.navy.withOpacity(0.5),
+          ),
+        ),
+        const SizedBox(height: 8),
+        if (r.instructions.isNotEmpty) ...[
+          Text(
+            r.instructions,
+            style: TextStyle(
+              fontSize: 12.5,
+              height: 1.6,
+              fontStyle: FontStyle.italic,
+              color: AppColors.navy.withOpacity(0.75),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        Text(
+          r.title,
+          style: const TextStyle(
+            fontSize: 21,
+            fontWeight: FontWeight.bold,
+            color: AppColors.navy,
+            height: 1.35,
+          ),
+        ),
+        if (r.subtitle.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(
+            r.subtitle,
+            style: TextStyle(
+              fontSize: 13.5,
+              height: 1.6,
+              fontStyle: FontStyle.italic,
+              color: AppColors.navy.withOpacity(0.78),
+            ),
+          ),
+        ],
+        if (r.source.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Source: ${r.source}',
+            style: TextStyle(
+              fontSize: 11.5,
+              color: AppColors.navy.withOpacity(0.5),
+            ),
+          ),
+        ],
+        const SizedBox(height: 14),
+        SelectableText(
+          r.body.trim(),
+          style: const TextStyle(
+            fontSize: 15.5,
+            height: 1.85,
+            color: AppColors.navy,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// The questions pane. Persian instructions and controls, so the content
+  /// is RTL even though the pane sits on the left.
+  Widget _buildQuestionsPane() {
+    return _paneBox(
+      child: Directionality(
+        textDirection: TextDirection.rtl,
+        child: Scrollbar(
+          controller: _questionScroll,
+          thumbVisibility: true,
+          child: SingleChildScrollView(
+            controller: _questionScroll,
+            padding: const EdgeInsets.fromLTRB(18, 20, 18, 28),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'سوالات ✍️',
+                  style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.navy),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'متن در سمت راست است. می‌تونی همزمان متن رو بخونی و جواب بدی.',
+                  style: TextStyle(
+                      fontSize: 12.5,
+                      height: 1.7,
+                      color: AppColors.navy.withOpacity(0.7)),
+                ),
+                const SizedBox(height: 12),
+                ..._questions.map(_buildQuestion),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSessionFooter() {
+    final answered = _questions.where(_isAnswered).length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          '$answered از ${_questions.length} سوال پاسخ داده شده',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+              fontSize: 12.5, color: AppColors.navy.withOpacity(0.7)),
+        ),
+        const SizedBox(height: 8),
+        StudyPrimaryButton(
+          label: 'ثبت پاسخ‌ها و پایان جلسه',
+          busy: _submitting,
+          onPressed: _submitQuiz,
+        ),
+        Center(
+          child: TextButton(
+            onPressed: _submitting ? null : _skipPart,
+            child: Text(
+              'رد کردن و رفتن به مرحله‌ی بعد ←',
+              style: TextStyle(
+                fontSize: 13,
+                color: AppColors.purple.withOpacity(0.85),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -849,48 +1079,54 @@ class _StudySessionPageState extends State<StudySessionPage> {
     );
   }
 
-  /// The 25-minute notice + live countdown for this reading part.
-//   Widget _buildTimeBanner() {
-//     final m = _remaining.inMinutes;
-//     final s = _remaining.inSeconds % 60;
-//     final low = _remaining.inMinutes < 5;
-//     return Container(
-//       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-//       decoration: BoxDecoration(
-//         color: Colors.white,
-//         borderRadius: BorderRadius.circular(12),
-//         border: Border.all(
-//             color: low
-//                 ? Colors.redAccent.withOpacity(0.5)
-//                 : AppColors.purple.withOpacity(0.25)),
-//       ),
-//       child: Row(
-//         children: [
-//           Icon(Icons.schedule_rounded,
-//               size: 20, color: low ? Colors.redAccent : AppColors.purple),
-//           const SizedBox(width: 10),
-//           const Expanded(
-//             child: Text(
-//               '',
-//               style: TextStyle(
-//                   fontSize: 12.5, height: 1.8, color: AppColors.navy),
-//             ),
-//           ),
-//           const SizedBox(width: 10),
-//           // Directionality(
-//           //   textDirection: TextDirection.ltr,
-//           //   child: Text(
-//           //     '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}',
-//           //     style: TextStyle(
-//           //       fontSize: 18,
-//           //       fontWeight: FontWeight.bold,
-//           //       fontFeatures: const [FontFeature.tabularFigures()],
-//           //       color: low ? Colors.redAccent : AppColors.navy,
-//           //     ),
-//           //   ),
-//           // ),
-//         ],
-//       ),
-//     );
-//   }
+  /// The live countdown for the reading window.
+  ///
+  /// Visible on purpose. At this pace it mirrors real IELTS conditions, and
+  /// the mild time pressure is what makes the task aversive enough that
+  /// natural disengagement happens at all — with no pressure the likely
+  /// result is a floor effect in which nobody disengages and the primary
+  /// measures have nothing to explain.
+  Widget _buildTimeBanner() {
+    final m = _remaining.inMinutes;
+    final sec = _remaining.inSeconds % 60;
+    final low = _remaining.inMinutes < 5;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+            color: low
+                ? Colors.redAccent.withOpacity(0.5)
+                : AppColors.purple.withOpacity(0.25)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.schedule_rounded,
+              size: 20, color: low ? Colors.redAccent : AppColors.purple),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Text(
+              'زمان باقی‌مانده‌ی این جلسه',
+              style: TextStyle(
+                  fontSize: 12.5, height: 1.8, color: AppColors.navy),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Directionality(
+            textDirection: TextDirection.ltr,
+            child: Text(
+              '${m.toString().padLeft(2, '0')}:'
+              '${sec.toString().padLeft(2, '0')}',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: low ? Colors.redAccent : AppColors.navy,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
  }

@@ -43,9 +43,34 @@ def ensure_columns() -> None:
     additions = {
         # (table, column): DDL type + default
         ("reminder_assets", "is_generic"):
-            "BOOLEAN NOT NULL DEFAULT 0",
+            "BOOLEAN NOT NULL DEFAULT FALSE",
         ("users", "study_group"):
             "VARCHAR(16)",
+        # Opens the scheduled-cue clock. Distinct from sessions.started_at,
+        # which is stamped when the row is created — cue slots are measured
+        # from the reading window, not from session creation.
+        ("sessions", "reading_started_at"):
+            "TIMESTAMP",
+        # Keeps published instruments and study-specific HCI items apart in
+        # the export. Defaults to 0 so any pre-existing row is treated as
+        # NOT-validated until proven otherwise — the safe direction, since
+        # the error that matters is calling a study-authored item published.
+        ("measure_responses", "validated"):
+            "BOOLEAN NOT NULL DEFAULT FALSE",
+        ("measure_responses", "source"):
+            "TEXT",
+        ("measure_responses", "phase"):
+            "INTEGER",
+        ("measure_responses", "scale_min"):
+            "INTEGER",
+        ("measure_responses", "measure_status"):
+            "VARCHAR(32)",
+        ("measure_responses", "battery_version"):
+            "VARCHAR(48)",
+        ("measure_responses", "entered_hours"):
+            "INTEGER",
+        ("measure_responses", "entered_minutes"):
+            "INTEGER",
     }
     insp = inspect(engine)
     existing_tables = set(insp.get_table_names())

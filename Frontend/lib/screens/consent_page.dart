@@ -42,7 +42,7 @@ class _ConsentPageState extends State<ConsentPage> {
           SizedBox(
             width: 200,
             child: StudyPrimaryButton(
-              label: 'موافقم، ادامه بده',
+              label: 'ادامه',
               onPressed: _agree ? _continue : null,
             ),
           ),
@@ -55,31 +55,22 @@ class _ConsentPageState extends State<ConsentPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'قبل از شروع، چند قول 🤝',
+              'حریم خصوصی',
               style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.navy),
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: AppColors.navy,
+              ),
             ),
             const SizedBox(height: 16),
             const _ConsentItem(
-              icon: Icons.visibility_off_outlined,
-              text:
-                  'تصویر آینده و هدف‌های شخصی‌ات رو هیچ انسانی نمی‌بینه؛ فقط سیستم ازش برای ساخت یادآور شخصیت استفاده می‌کنه.',
+              icon: Icons.description_outlined,
+              text: 'فایل PDF فقط در مرورگرت باز می‌شه.',
             ),
             const _ConsentItem(
-              icon: Icons.badge_outlined,
+              icon: Icons.lock_outline,
               text:
-                  'کاملاً ناشناس می‌مانی: نه ایمیل می‌خواهیم نه اسم کامل. فقط یک شناسه‌ی دلخواه انتخاب می‌کنی.',
-            ),
-            const _ConsentItem(
-              icon: Icons.science_outlined,
-              text:
-                  'رفتارهایی مثل جابه‌جایی بین صفحات در طول جلسه‌ی مطالعه به‌صورت خودکار و ناشناس ثبت می‌شود ولی محتوای صفحه‌‌ها و هیچ اطلاعات شخصی‌ای مانیتور نمی شوند.',
-            ),
-            const _ConsentItem(
-              icon: Icons.logout_outlined,
-              text: 'شرکت داوطلبانه است و هر لحظه می‌تونی انصراف بدی.',
+                  'گفتگو برای ساخت یادآور ذخیره و با هوش مصنوعی پردازش می‌شه. فعالیت صفحه هم برای نمایش یادآورها ثبت می‌شه.',
             ),
             const SizedBox(height: 12),
             CheckboxListTile(
@@ -89,11 +80,12 @@ class _ConsentPageState extends State<ConsentPage> {
               controlAffinity: ListTileControlAffinity.leading,
               contentPadding: EdgeInsets.zero,
               title: const Text(
-                'با شرایط بالا موافقم و داوطلبانه شرکت می‌کنم.',
+                'خواندم و موافقم.',
                 style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.navy),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.navy,
+                ),
               ),
             ),
           ],
@@ -121,7 +113,10 @@ class _ConsentItem extends StatelessWidget {
             child: Text(
               text,
               style: const TextStyle(
-                  fontSize: 14.5, height: 1.8, color: AppColors.navy),
+                fontSize: 14.5,
+                height: 1.8,
+                color: AppColors.navy,
+              ),
             ),
           ),
         ],

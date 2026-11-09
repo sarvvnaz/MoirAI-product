@@ -1,15 +1,34 @@
-/// Reading passages for the study sessions, keyed by session number.
+/// Reading passages for the study session.
 ///
-/// Difficulty deliberately escalates:
-///   1 — medium TOEFL-style passage (~600 words), accessible topic.
-///   2 — hard IELTS Reading Passage 3 length (~900 words), intentionally dry
-///       subject (institutional/bureaucratic history) to induce natural
-///       disengagement.
-///   3 — hardest: dense, abstract methodological text (~950 words).
+/// TWO PASSAGES, written to authentic IELTS Academic Reading specification:
 ///
-/// All passages are ORIGINAL texts written in the authentic style and
-/// difficulty of the exams (real TOEFL/IELTS passages are copyrighted).
-/// To swap in licensed exam material later, only this file needs editing.
+///   1 — "The Sailing Stones" (~730 words, paragraphs A-G). Passage 1
+///       difficulty: narrative-expository, concrete subject, chronological
+///       structure. A scientific puzzle and its resolution.
+///   2 — "The Collapse of the Northern Cod" (~830 words, paragraphs A-H).
+///       Passage 2-3 difficulty: argumentative, competing explanations,
+///       hedged claims, an institutional subject chosen to be genuinely dry.
+///
+/// LENGTH IS A DESIGN PARAMETER, not a stylistic choice. A real Academic
+/// Reading paper is ~2,150 words across three passages in 60 minutes, i.e.
+/// ~36 words/min. These two total ~1,560 words, so in the 35-minute window
+/// the participant faces ~44 words/min — about 1.24x authentic pace. Tight,
+/// like a rushed practice test, but completable.
+///
+/// The previous passages ran to ~1,400 words EACH. Two of those would have
+/// meant ~80 words/min, over twice authentic pace: not demanding but
+/// unfinishable, and a task nobody can complete measures giving up rather
+/// than procrastinating. The primary measures cannot separate those two.
+///
+/// The second consequence of authentic length is dosage. 26 questions
+/// guarantee the participant is still working at minute 20, so the second
+/// scheduled cue is actually reachable — which is what keeps exposure equal
+/// across arms.
+///
+/// All passages here are ORIGINAL texts written in the style, register and
+/// difficulty of the exam. Real IELTS passages are copyrighted; passage 3
+/// below is licensed material retained for reference and is NOT used by
+/// default (see StudyConfig.sessionPassages).
 class ReadingPassage {
   final String title;
 
@@ -22,8 +41,9 @@ class ReadingPassage {
   /// Short exam-style instruction line shown above the text.
   final String instructions;
 
-  /// The passage body. Paragraphs separated by blank lines; IELTS-style
-  /// passages label paragraphs "A." … "H." at the start of the line.
+  /// The passage body. Paragraphs separated by blank lines; paragraphs are
+  /// labelled "A." ... "H." at the start of the line, as in the exam, so that
+  /// matching-information questions can refer to them.
   final String body;
 
   const ReadingPassage({
@@ -34,101 +54,70 @@ class ReadingPassage {
     this.source = '',
   });
 
-  /// True while a licensed passage still has to be pasted in (see
-  /// `_CAMBRIDGE_18_T3_P1` below). Lets the UI show a clear notice instead
-  /// of an empty reading pane.
+  /// True while a licensed passage still has to be pasted in. Lets the UI
+  /// show a clear notice instead of an empty reading pane.
   bool get isPlaceholder => body.trim().startsWith('<<<');
 }
 
-/// ───────────────────────────────────────────────────────────────────
-/// Cambridge IELTS 18 · Test 3 · Reading Passage 1
-/// "Materials to take us beyond concrete"
-///
-/// Supplied by the researcher from their own licensed copy of the book, for
-/// non-commercial academic use, with the citation displayed on screen (see
-/// `source` below). Text © Cambridge University Press — do not redistribute
-/// this file outside the study.
-/// ───────────────────────────────────────────────────────────────────
-const String _cambridge18T3P1 = '''
-A. Concrete is the second most used substance in the global economy, after water — and one of the world's biggest single sources of greenhouse gas emissions. The chemical process by which cement, the key ingredient of concrete, is created results in large quantities of carbon dioxide. The UN estimates that there will be 9.8 billion people living on the planet by mid-century. They will need somewhere to live. If concrete is the only answer to the construction of new cities, then carbon emissions will soar, aggravating global warming. And so scientists have started innovating with other materials, in a scramble for alternatives to a universal commodity that has underpinned our modern life for many years.
+// ───────────────────────────────────────────────────────────────────
+// PASSAGE 1 — Academic Reading Passage 1 difficulty
+// ───────────────────────────────────────────────────────────────────
+const String _sailingStones = '''
+A. Racetrack Playa is a dry lake bed in the northern reaches of Death Valley National Park, California. It is remarkably flat: across its 4.5-kilometre length, the elevation varies by less than four centimetres. The surface is a pale, cracked crust of dried mud, and for most of the year it holds no water at all. What has drawn visitors and scientists to this otherwise unremarkable place for nearly a century is a scattering of stones — some weighing more than 300 kilograms — each of which trails a furrow in the mud behind it. The tracks run for tens or even hundreds of metres. Some are straight; others curve gently, or turn at sharp angles, and a few double back on themselves. Until very recently, nobody had ever seen a stone move.
 
-B. The problem with replacing concrete is that it is so very good at what it does. Chris Cheeseman, an engineering professor at Imperial College London, says the key thing to consider is the extent to which concrete is used around the world, and is likely to continue to be used. 'Concrete is not a high-carbon product. Cement is high carbon, but concrete is not. But it is the scale on which it is used that makes it high carbon. The sheer scale of manufacture is so huge, that is the issue.'
+B. The stones themselves are not native to the playa floor. They are fragments of dolomite and syenite that have broken away from the steep slopes at the southern end of the basin and tumbled down onto the flat surface below. Their arrival is easily explained. Their subsequent journeys are not. Early visitors assumed that the tracks were the work of pranksters, but the absence of any footprints in the soft mud made this difficult to sustain. By the 1940s the phenomenon had attracted the attention of professional geologists, and a series of formal investigations began.
 
-C. Not only are the ingredients of concrete relatively cheap and found in abundance in most places around the globe, the stuff itself has marvellous properties: Portland cement, the vital component of concrete, is mouldable and pourable, but quickly sets hard. Cheeseman also notes another advantage: concrete and steel have similar thermal expansion properties, so steel can be used to reinforce concrete, making it far stronger and more flexible as a building material than it could be on its own. According to Cheeseman, all these factors together make concrete hard to beat. 'Concrete is amazing stuff. Making anything with similar properties is going to be very difficult.'
+C. The first published explanation, advanced in 1948, held that the stones were driven by dust devils — the small, intense whirlwinds that are common in desert basins. The hypothesis had obvious appeal, but it did not survive scrutiny. Dust devils are short-lived and highly localised, and it was hard to see how they could produce the long, parallel tracks that several stones sometimes shared. Nor could they account for the observation that stones of very different masses appeared to have travelled comparable distances.
 
-D. A possible alternative to concrete is wood. Making buildings from wood may seem like a rather medieval idea, but climate change is driving architects to turn to treated timber as a possible resource. Recent years have seen the emergence of tall buildings constructed almost entirely from timber. Vancouver, Vienna and Brumunddal in Norway are all home to tall, wooden buildings.
+D. A second theory proposed that the playa surface, once wet, became slippery enough for ordinary desert winds to push the stones along it. Researchers calculated the wind speeds this mechanism would require and arrived at figures approaching several hundred kilometres per hour — far in excess of anything ever recorded at the site. Direct measurement of the wet surface compounded the difficulty: the mud proved considerably less slick than the theory demanded.
 
-E. Using wood to construct buildings, however, is not straightforward. Wood expands as it absorbs moisture from the air and is susceptible to pests, not to mention fire. But treating wood and combining it with other materials can improve its properties. Cross-laminated timber is engineered wood. An adhesive is used to stick layers of solid-sawn timber together, crosswise, to form building blocks. This material is light but has the strength of concrete and steel. Construction experts say that wooden buildings can be constructed at a greater speed than ones of concrete and steel and the process, it seems, is quieter.
+E. Attention then turned to ice. In winter the playa occasionally floods to a depth of a few centimetres, and overnight temperatures fall below freezing. Several researchers suggested that the stones became locked into large sheets of ice, which the wind could then drag across the flooded surface, carrying the stones with them. This "ice raft" hypothesis accounted neatly for the parallel tracks, since stones frozen into a single sheet would necessarily move together. It was, however, extremely difficult to test. Field visits were infrequent, the flooding was unpredictable, and the movement events themselves appeared to be rare — perhaps one in a decade.
 
-F. Stora Enso is Europe's biggest supplier of cross-laminated timber, and its vice-president Markus Mannström reports that the company is seeing increasing demand globally for building in wood, with climate change concerns the key driver. Finland, with its large forests, where Stora Enso is based, has been leading the way, but the company is seeing a rise in demand for its timber products across the world, including in Asia. Of course, using timber in a building also locks away the carbon that it absorbed as it grew. But even treated wood has its limitations and only when a wider range of construction projects has been proven in practice will it be possible to see wood as a real alternative to concrete in constructing tall buildings.
+F. The question was finally settled between 2011 and 2014 by a team who installed a weather station at the playa and fitted fifteen stones with GPS units. In December 2013 the playa flooded. On the mornings that followed, thin sheets of ice — no more than three to six millimetres thick — formed over the shallow water. As the sun rose, the ice began to break apart into large floating panels. A light wind, of only three to five metres per second, was sufficient to push these panels across the pond, and where a panel met a stone it shunted the stone forward through the soft mud beneath. The stones moved slowly, at a few centimetres per second, and only for a few minutes at a time. Several were recorded travelling more than sixty metres over the course of a single winter.
 
-G. Fly ash and slag from iron ore are possible alternatives to cement in a concrete mix. Fly ash, a byproduct of coal-burning power plants, can be incorporated into concrete mixes to make up as much as 15 to 30% of the cement, without harming the strength or durability of the resulting mix. Iron-ore slag, a byproduct of the iron-ore smelting process, can be used in a similar way. Their incorporation into concrete mixes has the potential to reduce greenhouse gas emissions.
-
-But Anna Surgenor, of the UK's Green Building Council, notes that although these waste products can save carbon in the concrete mix, their use is not always straightforward. 'It's possible to replace the cement content in concrete with waste products to lower the overall carbon impact. But there are several calculations that need to be considered across the entire life cycle of the building — these include factoring in where these materials are being shipped from. If they are transported over long distances, using fossil fuels, the use of alternative materials might not make sense from an overall carbon reduction perspective.'
-
-H. While these technologies are all promising ideas, they are either unproven or based on materials that are not abundant. In their overview of innovation in the concrete industry, Felix Preston and Johanna Lehne of the UK's Royal Institute of International Affairs reached the conclusion that, 'Some novel cements have been discussed for more than a decade within the research community, without breaking through. At present, these alternatives are rarely as cost-effective as conventional cement, and they face raw-material shortages and resistance from customers.'
+G. The result was, in one sense, an anticlimax. The mechanism required no exceptional forces: no violent winds, no thick ice, no rare geological event. It required only a precise and uncommon combination of entirely ordinary conditions — enough rain to form a shallow pond, nights cold enough to freeze a thin crust upon it, and sun and wind arriving in the right order the following morning. The rarity of the movement was explained not by the rarity of any single ingredient but by the improbability of all of them coinciding. The investigation had taken sixty-six years, and its conclusion was that nothing unusual had been happening at all.
 ''';
 
+// ───────────────────────────────────────────────────────────────────
+// PASSAGE 2 — Academic Reading Passage 2/3 difficulty
+// ───────────────────────────────────────────────────────────────────
+const String _northernCod = '''
+A. For almost five centuries the continental shelf off Newfoundland supported one of the most productive fisheries on earth. The northern cod stock that spawned there had drawn European fleets since the sixteenth century, and by the middle of the twentieth it was yielding some 250,000 tonnes a year to Canadian and foreign vessels alike. In July 1992 the Canadian government closed the fishery altogether. The spawning stock had fallen to roughly one per cent of its historical level. Some thirty thousand people lost their livelihoods in a single announcement, and a moratorium that was intended to last two years has, in practice, never been lifted.
+
+B. The immediate cause is not seriously disputed. From the late 1950s the arrival of factory freezer trawlers transformed the scale on which cod could be taken. These vessels could work in almost any weather, process and freeze their catch at sea, and remain on the grounds for weeks at a time. Landings climbed steeply, peaking at more than 800,000 tonnes in 1968, and then fell away. Canada's extension of its exclusive economic zone to 200 nautical miles in 1977 removed most foreign vessels from the grounds, but the domestic fleet expanded to occupy the space they had vacated, encouraged by public investment in new vessels and processing plants.
+
+C. What remains contested is why the decline was not detected and acted upon in time. Stock assessments throughout the 1980s consistently reported a large and harvestable population. These estimates were produced by the federal fisheries department and depended heavily on catch rates reported by the commercial fleet — the quantity of fish landed for each unit of fishing effort expended. The reasoning appeared sound: if the catch taken per hour of trawling held steady, the underlying population was presumably stable too.
+
+D. The assumption was mistaken, and its failure has since become a standard illustration in the literature on resource management. Cod do not distribute themselves evenly through the water; they aggregate, and they aggregate more tightly as their numbers fall. A shrinking population may concentrate into progressively smaller and denser shoals, which vessels equipped with sonar are able to locate with increasing efficiency. Catch rates therefore held up even as the stock collapsed beneath them, a phenomenon now generally termed hyperstability. The fleet's effort data were, in effect, measuring the improvement of its own technology rather than the abundance of the fish.
+
+E. Independent research surveys, which sampled fixed locations irrespective of where the fish were expected to be, told a different story, and from the middle of the 1980s their results diverged sharply from the commercial figures. The divergence was noticed at the time. Several scientists within the department argued that the quotas being set were far too high, and one of them later published analyses concluding that the stock had been overfished by a wide margin for a decade. Their assessments did not prevail. The explanations offered by subsequent public inquiries were institutional rather than scientific: the department was charged both with conserving the stock and with supporting the industry that depended upon it, and reductions in quota carried costs that were immediate and highly visible, while their benefits were deferred and uncertain.
+
+F. A competing account attributes the collapse principally to environmental change. Water temperatures on the shelf fell during the late 1980s, and cold conditions are known both to slow the growth of cod and to reduce the survival of young fish. Seal populations, meanwhile, had risen substantially following restrictions on hunting. A number of commentators, including several within the fishing industry itself, maintained that these factors rather than fishing pressure accounted for the disappearance of the stock.
+
+G. Most subsequent analyses treat the environmental account as insufficient on its own. Comparable cold periods had occurred before without producing anything of the kind, and the collapse was too rapid and too complete to be explained by a modest decline in recruitment. The more defensible position is that environmental stress acted upon a population already reduced to the point at which it had no capacity left to absorb it. The distinction is not merely academic, because the two accounts imply quite different lessons: on one reading the fishery was unlucky, on the other it was mismanaged.
+
+H. The stock has not recovered. Three decades after the moratorium the biomass remains far below the levels of the 1960s, and the ecosystem itself appears to have reorganised around the absence of its former dominant predator. Capelin and shrimp, once prey, now occupy much of the space that cod formerly held, and there is evidence that they suppress any recovery by consuming cod eggs and larvae. Whether the system will eventually return to its earlier state, or has instead settled into a stable alternative, remains unresolved. What is no longer disputed is the more general lesson: an assessment method that draws its data from the industry it is meant to regulate will tend to report what that industry is able to catch, and not what is left in the sea.
+''';
+
+const ReadingPassage _passage1 = ReadingPassage(
+  title: 'The Sailing Stones',
+  subtitle: 'How a sixty-six-year mystery in Death Valley was finally solved',
+  instructions: 'You should spend about 15 minutes on Questions 1-13, which '
+      'are based on Reading Passage 1 below.',
+  body: _sailingStones,
+);
+
+const ReadingPassage _passage2 = ReadingPassage(
+  title: 'The Collapse of the Northern Cod',
+  subtitle: 'What the closure of the Newfoundland fishery revealed about how '
+      'fish stocks are counted',
+  instructions: 'You should spend about 20 minutes on Questions 14-26, which '
+      'are based on Reading Passage 2 below.',
+  body: _northernCod,
+);
+
+/// Keyed by passage id. `StudyConfig.sessionPassages` selects which are shown.
 const Map<int, ReadingPassage> readingsBySession = {
-  1: ReadingPassage(
-    title: 'Materials to take us beyond concrete',
-    subtitle: 'Concrete is everywhere, but it\'s bad for the planet, '
-        'generating large amounts of carbon dioxide — alternatives are '
-        'being developed',
-    source: 'Cambridge IELTS 18 · Test 3 · Reading Passage 1 '
-        '(Cambridge University Press)',
-    instructions:
-        '',
-    body: _cambridge18T3P1,
-  ),
-  2: _shippingContainers,
-  3: _historicalLivingStandards,
+  1: _passage1,
+  2: _passage2,
 };
-
-const ReadingPassage _shippingContainers = ReadingPassage(
-    title: 'The Standardization of the Shipping Container',
-    instructions:
-        'Answer ALL '
-        'questions. For True / False / Not Given questions choose:\n'
-        'True — the statement agrees with the information in the passage.\n'
-        'False — the statement contradicts the information.\n'
-        'Not Given — there is no information on this in the passage.',
-    body: '''
-A. It is difficult to think of an object at once so consequential and so uninteresting to look at as the intermodal shipping container. The corrugated steel box, typically twenty or forty feet long, is now so uniform across the world's ports that it is easy to assume its dimensions were settled quickly and amicably. The historical record shows otherwise. The container's standard measurements were the product of nearly fifteen years of committee negotiation, involving domestic trade associations, national standards bodies, the International Organization for Standardization (ISO), and several governments, and the process was marked at almost every stage by disagreement over matters that outsiders found trivial, such as the placement of lifting fittings and the thickness of corner posts.
-
-B. Before standardization, containers of a sort had existed for decades. Railways in Europe and North America had experimented since the 1920s with demountable boxes that could be transferred between flatcars and lorries. These early containers varied enormously: wooden or steel, five to ten feet long, with or without wheels, lifted by cranes, forklifts or ramps. Each railway or shipping line designed containers to fit its own vehicles, with the predictable result that a box that travelled efficiently within one company's network had to be unpacked and repacked the moment its cargo passed to another carrier. The cost of this repeated handling, rather than the cost of the boxes themselves, was the principal obstacle to through-transport of goods.
-
-C. The first serious attempt at unification came not from the shipping industry but from the American trucking and railroad sectors. In 1958, the United States Maritime Administration, concerned that federal subsidies were about to finance a generation of mutually incompatible ships, convened two expert committees to recommend standard container dimensions. The committees quickly agreed that height should be fixed at eight feet, and after some argument settled on a width of eight feet as well, chiefly because this was the maximum that could travel on highways in most American states without special permits. Length proved far more contentious. Existing operators had fleets built around ten, twelve, seventeen, twenty, twenty-four and thirty-five foot boxes, and each argued that its own investment should define the national standard. The eventual compromise — a family of lengths at ten, twenty, thirty and forty feet, each a multiple of the ten-foot module — satisfied almost no one, and the largest operator of the day, whose thirty-five foot containers fit neither series, refused for years to adopt it.
-
-D. When the question moved to the international stage in 1961, under ISO Technical Committee 104, the disagreements multiplied. European railways operated under loading restrictions that made the American eight-foot width awkward, and several delegations pressed for a narrower box. The British argued for dimensions compatible with their smaller rail wagons; the French had a national container series of their own; and the Japanese delegation, whose domestic roads at the time limited vehicle widths severely, requested exceptions that would have created, in effect, a parallel standard. Five years of correspondence, draft proposals and postal ballots followed. The eight-foot width ultimately survived, largely because the volume of transatlantic trade gave the American position a practical weight that procedural objections could not overcome.
-
-E. A separate and, by most accounts, even more tedious battle concerned the corner fitting — the steel casting at each corner of the container by which it is lifted, stacked and locked to vehicles. Since every crane, spreader and twist-lock in the world would have to engage with this fitting, its internal apertures had to be identical everywhere, to tolerances of a few millimeters. Two incompatible designs, one American and one European, each protected by patents, competed for adoption. The deadlock was broken only when the American patent holder, under pressure from its own government, released its design royalty-free in 1963. Even then, testing revealed that the released design was too weak for the newest generation of larger ships, and a strengthened version had to be agreed, drawn, circulated and re-balloted, delaying final publication of the standard until 1965.
-
-F. The economic effects of these dull negotiations were anything but dull. Once any container could be handled by any crane, stacked in any cell of any ship and locked to any chassis in any country, the cost of moving manufactured goods across oceans fell steeply. Economists studying trade flows in the decades after standardization have attributed to the container a larger share of the growth in world trade than to all tariff reductions of the same period combined. Ports that had employed thousands of dockworkers to handle loose cargo were rebuilt around the box; entire cities that had lived on break-bulk shipping declined, while previously minor harbours with deep water and cheap land — Felixstowe in England, Tanjung Pelepas in Malaysia — rose to global significance.
-
-G. Historians of technology draw a wider lesson from the episode. Standardization is often imagined as a technical exercise in finding the best design, but the container's history suggests it is better understood as a political process of distributing losses: every dimension chosen destroyed someone's existing investment, and the standard succeeded not because it was optimal — engineers at the time agreed it was not — but because the parties who lost least were persuaded to accept their losses early. The very dullness of the proceedings, on this view, was a condition of their success, since committees survive only where passions can be kept procedural.
-''',
-);
-
-const ReadingPassage _historicalLivingStandards = ReadingPassage(
-    title: 'Measuring the Past: The Problem of Historical Living Standards',
-    instructions:
-        'You should spend about 20 minutes on this passage. The questions '
-        'below include True / False / Not Given items and multiple-choice '
-        'items about the writer\'s views. Choose the best answer for each.',
-    body: '''
-A. Whether ordinary people became better or worse off during the first century of industrialization is among the oldest questions in economic history, and it remains unsettled less because evidence is scarce than because the question itself is resistant to measurement. To say that living standards rose is to make a quantitative claim about aggregate welfare; yet welfare is not directly observable, and every proxy through which historians approach it — wages, prices, heights, mortality, consumption — embodies assumptions that predetermine, to a degree rarely acknowledged, the answer that will be found.
-
-B. The most venerable proxy is the real wage: the money wage of some defined worker divided by the price of some defined basket of goods. Each element of this construction conceals difficulties. Money wage series survive mainly for urban, male, unionized or institutionally employed workers — builders on cathedral accounts, laborers on college estates — whose experience may be unrepresentative precisely because it was recorded. The composition of the basket is more troublesome still. If the basket is held constant across a century, the calculation ignores the substitutions consumers actually made as relative prices shifted; if the basket is updated, the index ceases to compare like with like. The choice between these procedures, formally the choice between a Laspeyres and a Paasche index, can reverse the direction of a measured trend, and the decision between them cannot be made on evidence internal to the series: it is a decision about what the historian wishes the number to mean.
-
-C. Dissatisfaction with wage evidence has driven a turn toward biological measures, of which adult stature is the most exploited. Height, the argument runs, integrates net nutrition over childhood — food intake minus the claims of disease and labor — and is recorded for populations, such as military recruits, that wage data ignore. The anthropometric literature has produced one of the field's most cited paradoxes: in several industrializing economies, average heights appear to have fallen during decades when conventional real-wage series were rising. Some scholars read this "antebellum puzzle" as proof that monetary measures overstate early industrial welfare, pointing to urban disease environments and the intensification of child labor. Others reply that recruitment records are themselves selected samples — armies accept different men in war and peace — and that the apparent decline may be an artifact of changing selection rather than deteriorating nutrition. The debate has been technically fertile but substantively inconclusive, in part because both sides agree that height responds to influences no one can now apportion.
-
-D. A third tradition attempts to bypass proxies altogether by reconstructing household budgets: what families actually earned, from all members and all sources, and what they actually bought. Where such accounts survive they are revealing, showing, for instance, how heavily early industrial households depended on the earnings of women and children, whose wages appear in no standard series. But budgets were collected by observers — clergymen, factory inspectors, philanthropic societies — with purposes of their own, usually the demonstration of poverty or of improvidence, and their samples were chosen accordingly. Aggregating documents produced to prove opposite theses does not cancel their biases; it merely averages them into invisibility.
-
-E. It might be supposed that these are technical problems, to be resolved as archives are digitized and methods refined. The more radical position, associated with a minority of historians, is that the difficulties are conceptual and therefore permanent. Welfare comparisons across long periods, they argue, require a stable unit of account — a common measure of how well a life is going — and no such unit exists between societies whose consumption sets barely overlap. The eighteenth-century laborer bought candles, the twentieth-century worker electric light; the price of "lighting" can be constructed to fall by any factor one likes, depending on whether lumens, hours or social participation is the quantity held fixed. On this view, long-run index numbers do not measure welfare change so much as encode, in apparently neutral arithmetic, a particular theory of what mattered.
-
-F. The pragmatic response, which probably commands the assent of most practitioners, concedes the philosophical point while denying its practical force. All measurement, in any science, rests on conventions; the remedy for a conventional measure is not abandonment but multiplication. Where wages, heights, mortality and budgets all point the same way — as, for the second half of the nineteenth century, they largely do — confidence is warranted, not because any single series is sound, but because their errors are unlikely to be correlated. Where they diverge, as in the early decades of industrialization, the divergence is itself the finding: it marks a period in which the gains and losses of economic change were distributed too unevenly, across regions, occupations and members of households, for any aggregate to summarize.
-
-G. The dispute is thus less about the past than about the ambitions of quantification. Those who construct the indices regard a noisy number as better than none, since without it every claim about long-run change floats free of discipline. Their critics regard the number as worse than none, since it lends the authority of arithmetic to what remains an interpretation. What neither side disputes is that the choice of measure is prior to, and largely determines, the history that gets written — a conclusion that students of any quantitative discipline may find has an application wider than economic history.
-''',
-);

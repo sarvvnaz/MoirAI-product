@@ -328,5 +328,55 @@ EFT_GROUP_RATIO = float(os.getenv("EFT_GROUP_RATIO", "0.5"))
 # participants in the "eft" arm.
 NEUTRAL_RATIO = float(os.getenv("NEUTRAL_RATIO", "0.0"))
 
+# ─────────────────────────────
+# SCHEDULED CUE PROTOCOL
+# ─────────────────────────────
+# Reminders are delivered on a FIXED CLOCK, not in reaction to disengagement.
+#
+# This is the change that makes the analysis work. A cue that fires *because*
+# the participant got distracted can never predict whether they get
+# distracted — the design was circular. On a fixed schedule the cue is
+# exogenous: it lands whether or not they were about to disengage, so it
+# becomes a legitimate predictor and the before/after contrast within one
+# participant is valid. Equal dosage across arms is the visible benefit; this
+# is the one that matters.
+#
+# The SERVER owns this clock. Neither client can be trusted with it: the web
+# app's timers are throttled by the browser once its tab is hidden — exactly
+# the state where a cue matters most — and the extension's MV3 service worker
+# is evicted and restarted at Chrome's discretion.
+
+# Length of the reading window. Two authentic IELTS Academic Reading passages
+# in 35 minutes is tighter than real IELTS pace (~20 min per passage), which
+# is deliberate: mild time pressure makes the task aversive enough that
+# natural disengagement occurs, without which the primary measures have no
+# variance to explain.
+READING_WINDOW_SECONDS = int(os.getenv("READING_WINDOW_SECONDS", "2100"))
+
+# When each cue is due, as offsets from the start of the reading window.
+# Exactly two, so intervention dosage is identical in both arms.
+CUE_OFFSETS_SECONDS = [
+    int(x) for x in os.getenv("CUE_OFFSETS_SECONDS", "600,1200").split(",")
+]
+
+# How long after a slot opens the cue may still be delivered. Covers the case
+# where the participant is sitting on a page the extension cannot inject into
+# (chrome://, the PDF viewer, the Web Store) — the extension keeps retrying
+# within this window. After it expires the row is marked undelivered WITH A
+# REASON rather than silently dropped, because "no cue was needed" and
+# "delivery failed" must not look the same in the data.
+CUE_GRACE_SECONDS = int(os.getenv("CUE_GRACE_SECONDS", "90"))
+
+# Silence after which a participant counts as idle. Mirrors StudyConfig in
+# the Flutter app; both must agree, because this defines what counts as a
+# disengagement and therefore what the outcome measures mean.
+IDLE_THRESHOLD_SECONDS = int(os.getenv("IDLE_THRESHOLD_SECONDS", "60"))
+
+# Retention windows are unequal by construction: slot 1 has at most 10
+# minutes before slot 2 lands, slot 2 has 15 before the session ends. Left
+# uncorrected, slot 2 would look better purely for having more room. Analysis
+# censors both at this common horizon.
+RETENTION_CENSOR_SECONDS = int(os.getenv("RETENTION_CENSOR_SECONDS", "600"))
+
 # Key required by GET /api/research/export — the full dataset export.
 ADMIN_EXPORT_KEY = _require_secret("ADMIN_EXPORT_KEY", "moirai-export-2026")

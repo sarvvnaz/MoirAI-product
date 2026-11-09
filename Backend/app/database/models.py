@@ -7,7 +7,8 @@ import uuid
 from pydantic import EmailStr
 
 from sqlalchemy import (
-    String, Integer, Float, DateTime, func, ForeignKey, Text, JSON, Enum, Index, Column, UniqueConstraint, Boolean
+    String, Integer, Float, DateTime, func, false, ForeignKey, Text, JSON,
+    Enum, Index, Column, UniqueConstraint, Boolean
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .db_setup import Base
@@ -283,6 +284,14 @@ class Session(Base):
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    # When the READING WINDOW itself began — distinct from started_at, which
+    # is stamped when the session row is created (before the breathing
+    # countdown). Cue slots are measured from this, so it is the server's
+    # authoritative clock for the whole protocol. Nullable: a session exists
+    # before its reading window opens.
+    reading_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     ended_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -456,7 +465,7 @@ class ReminderAsset(Base):
     # condition; False for the participant's own episode. Stored per asset so
     # an export can tell the two apart without re-deriving it from the URL.
     is_generic: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default="0"
+        Boolean, nullable=False, default=False, server_default=false()
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=func.now()
@@ -469,12 +478,18 @@ class ReminderAsset(Base):
 # RESEARCH EVENTS (step 11: one row PER TRIGGER, not per user)
 # ─────────────────────────────
 class ResearchEvent(Base):
-    """
-    Event-level research data: one row for every disengagement trigger
-    (tab switch or idle) during a study session. The row is created at
-    trigger time (so partial sessions still leave data) and updated when
-    the participant returns to reading and when the next trigger closes
-    out the reading-time window.
+    """FROZEN — the reactive protocol's event table. Read, never written.
+
+    One row per disengagement trigger, from the design where a reminder fired
+    *because* the participant disengaged. That conflated two things which are
+    now separate: CueDelivery holds reminders (fixed schedule), and
+    DisengagementEpisode holds disengagements (the outcome).
+
+    Kept, and still exported, because these rows are the record of what the
+    pilot actually did. They must NEVER be pooled with the new tables — they
+    come from a different protocol and a different causal structure, and the
+    latency column in particular means something else here (time to return
+    after a reactive cue, which cannot be compared with a scheduled one).
     """
     __tablename__ = "research_events"
 
@@ -528,6 +543,173 @@ class ResearchEvent(Base):
 
 
 # ─────────────────────────────
+# SCHEDULED CUES  (one row per slot)
+# ─────────────────────────────
+class CueDelivery(Base):
+    """One scheduled reminder slot.
+
+    Replaces the trigger-shaped ResearchEvent for cue data. Those two used to
+    be the same row because a reminder only ever existed as a reaction to a
+    disengagement; on a fixed clock they are different things, and conflating
+    them makes both unanalysable.
+
+    Rows are created UP FRONT, when the reading window opens, rather than at
+    delivery. That way a cue that never reached the participant is a visible
+    NULL with a reason attached, instead of an absent row — the difference
+    between "no cue was needed" and "delivery failed", which the old schema
+    could not express.
+    """
+    __tablename__ = "cue_deliveries"
+    __table_args__ = (
+        # The app and the extension both race to deliver a due slot. They are
+        # near-exclusive in practice (the study tab is either in front or it
+        # is not), but "near" is not a guarantee, and a double-delivered slot
+        # would break the equal-dosage claim the whole design rests on.
+        UniqueConstraint("session_id", "slot", name="uq_cue_session_slot"),
+        Index("ix_cue_participant", "participant_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    participant_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+
+    # 1 = minute 10, 2 = minute 20. Kept as a fixed effect in analysis so any
+    # order or fatigue difference between the two is absorbed rather than
+    # attributed to the intervention.
+    slot: Mapped[int] = mapped_column(Integer, nullable=False)
+    scheduled_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+    # ── delivery ──
+    claimed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    claimed_by: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    delivered_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # How late the cue actually was, in ms. chrome.alarms has a 30s floor and
+    # a suspended service worker can add more, so timing precision is AUDITED
+    # rather than assumed: "minute 10" is a claim this column can check.
+    delivery_offset_ms: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True
+    )
+
+    # active | idle | off_tab | off_browser — the attentional state at the
+    # moment the slot opened. This is what splits the two primary measures:
+    # return latency is only defined for the off-tab states, retention only
+    # for `active`. They answer different questions and must never be pooled.
+    state_at_delivery: Mapped[Optional[str]] = mapped_column(
+        String(20), nullable=True
+    )
+    # corner_card | in_app_overlay | full_page_modal
+    form: Mapped[Optional[str]] = mapped_column(String(24), nullable=True)
+
+    # personalized | neutral — set server-side from the participant's arm,
+    # never from what the client reports it rendered.
+    condition: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="personalized"
+    )
+    asset_image_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    asset_cue: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # ── outcomes ──
+    dismissed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    clicked_return: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    # PRIMARY MEASURE 1 — only for cues delivered off-tab. Milliseconds
+    # because the blueprint specifies ms and whole seconds throw away most of
+    # the resolution in a measure whose interesting range is a few seconds.
+    return_latency_ms: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True
+    )
+    # PRIMARY MEASURE 2 — only for cues delivered while active: seconds from
+    # the cue until the next disengagement begins.
+    post_cue_focus_seconds: Mapped[Optional[float]] = mapped_column(
+        Float, nullable=True
+    )
+
+    # Why a slot produced no delivery. Never left as a bare NULL delivery.
+    not_delivered_reason: Mapped[Optional[str]] = mapped_column(
+        String(40), nullable=True
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now()
+    )
+
+    user: Mapped["User"] = relationship()
+
+    def __repr__(self):
+        return (f"<CueDelivery p={self.participant_id} slot={self.slot} "
+                f"state={self.state_at_delivery}>")
+
+
+# ─────────────────────────────
+# DISENGAGEMENT EPISODES
+# ─────────────────────────────
+class DisengagementEpisode(Base):
+    """One episode of the participant not reading — a tab switch or idle.
+
+    Independent of any cue. That independence IS the design change: under the
+    reactive protocol a disengagement only got recorded because it triggered
+    a reminder, so disengagement was the trigger. Here it is the outcome, and
+    it is counted whether or not a cue was anywhere near it.
+    """
+    __tablename__ = "disengagement_episodes"
+    __table_args__ = (
+        Index("ix_diseng_participant_started", "participant_id", "started_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    participant_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    session_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("sessions.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
+    episode_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    ended_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    duration_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # return | session_end | abandoned. An episode still open when the window
+    # closes is not the same as one the participant came back from, and
+    # time-on-task is wrong if the two are treated alike.
+    ended_by: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+
+    # Denormalised on purpose: this is the join key for the retention measure,
+    # and computing it at write time avoids rebuilding each participant's
+    # timeline across two tables during analysis.
+    ms_since_last_cue: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True
+    )
+    preceded_by_cue_slot: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now()
+    )
+
+    user: Mapped["User"] = relationship()
+
+    def __repr__(self):
+        return (f"<DisengagementEpisode p={self.participant_id} "
+                f"{self.episode_type} {self.duration_ms}ms>")
+
+
+# ─────────────────────────────
 # MEASUREMENT BATTERY
 # ─────────────────────────────
 class MeasureResponse(Base):
@@ -557,11 +739,16 @@ class MeasureResponse(Base):
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    # 'fsc' | 'intention' | 'asayama' | 'reminder' | 'attention_check'
+    # 'goal_importance' | 'asayama_eft' | 'tipi' | 'sus' |
+    # 'reminder_experience' | 'attention_check'
     instrument: Mapped[str] = mapped_column(String(32), nullable=False)
     item_code: Mapped[str] = mapped_column(String(48), nullable=False)
-    # 'baseline' | 'post_chat' | 'session1' | 'session2' | 'closing'
+    # 'baseline' | 'post_chat' | 'onboarding_inventory' | 'post_task' |
+    # 'closing'
     timepoint: Mapped[str] = mapped_column(String(24), nullable=False, index=True)
+    # Study phase 1-6, carried so an export can be ordered by protocol stage
+    # without re-deriving it from the timepoint name.
+    phase: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     value: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     text_value: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -569,9 +756,47 @@ class MeasureResponse(Base):
     # Stored per response rather than looked up at analysis time: the item
     # bank can change, and a row must stay interpretable on its own.
     reverse: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default="0"
+        Boolean, nullable=False, default=False, server_default=false()
     )
+    scale_min: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     scale_max: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    # TRUE  = a published, validated instrument used verbatim (translated).
+    # FALSE = a study-specific HCI evaluation item, written for this study,
+    #         which must NEVER be reported as a validated psychological scale.
+    #
+    # Stamped onto the ROW, not looked up at analysis time. The item bank is
+    # edited during piloting, and the one thing that must not drift is which
+    # category an already-collected answer belonged to — that is the
+    # distinction the whole write-up rests on.
+    validated: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
+    # The precise provenance category — published_original /
+    # published_translated / published_adapted / study_specific_hci /
+    # study_specific_open_ended / deprecated. The boolean above cannot
+    # express the difference between "published but translated" and
+    # "published but reworded", and that difference decides how an item may
+    # be described in a write-up.
+    measure_status: Mapped[Optional[str]] = mapped_column(
+        String(32), nullable=True
+    )
+    # Which battery version produced this answer. Stamped per row so an
+    # export can never silently pool two protocol versions.
+    battery_version: Mapped[Optional[str]] = mapped_column(
+        String(48), nullable=True
+    )
+    # Duration items (intended study time) only. The raw entry is kept
+    # ALONGSIDE the normalised total in `value`, because "2h 30m" and "150
+    # minutes" are the same quantity but not the same answer, and only the
+    # raw pair shows how the participant actually thought about it.
+    entered_hours: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    entered_minutes: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True
+    )
+    # Full citation for a published item; "Study-specific HCI evaluation
+    # item" otherwise. Denormalised for the same reason as `validated`.
+    source: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=func.now()

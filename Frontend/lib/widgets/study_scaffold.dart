@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../data/study_steps.dart';
 import '../services/api_service.dart';
 import '../theme/app_colors.dart';
+import 'study_shell_metrics.dart';
 
 /// The shared shell for every step of the study:
 ///  - full navy background
@@ -17,23 +18,32 @@ class StudyScaffold extends StatelessWidget {
   /// Optional bar pinned to the bottom of the box (e.g. Next button row).
   final Widget? bottomBar;
 
+  /// Let this step use the full window instead of the narrow centred box.
+  ///
+  /// The reading session needs it: the exam layout puts the questions beside
+  /// the passage, and the default box caps at 860px, which leaves two columns
+  /// too thin to read either. Every other step is a form or a short
+  /// questionnaire, where a narrow measure is easier to read, so the default
+  /// stays as it was.
+  final bool wide;
+
   const StudyScaffold({
     super.key,
     required this.currentStep,
     required this.child,
     this.bottomBar,
+    this.wide = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
-    final bool compact = size.width < 700;
+    final bool compact = StudyShellMetrics.isCompact(size);
 
-    // Constant box size per step; adaptive to screen.
-    final double boxWidth =
-        compact ? size.width * 0.94 : (size.width * 0.72).clamp(560.0, 860.0);
-    final double boxHeight =
-        (size.height * 0.72).clamp(420.0, 720.0);
+    // Constant box size per step; adaptive to screen. A wide step takes the
+    // window instead, less a small margin. See StudyShellMetrics.
+    final double boxWidth = StudyShellMetrics.boxWidth(size, wide: wide);
+    final double boxHeight = StudyShellMetrics.boxHeight(size, wide: wide);
 
     return Directionality(
       textDirection: TextDirection.rtl,

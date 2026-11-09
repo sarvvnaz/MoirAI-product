@@ -1,0 +1,109 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# backend build outputs
+Backend/dist/
+Backend/build/
+
+# python environments & caches
+Backend/.venv/
+Backend/venv/
+__pycache__/
+
+# secrets
+.env
+
+# duplicate/backup copies and export artifacts, not meant to be tracked
+*.zip
+*.rsrc
+Thumbs.db
+project-tree.txt
+Backend/app/bachend/
+Backend/app-prechat/
+Backend/app-prechat and notif/
+Frontend/lib-1/
+Frontend/lib-prechat/
+
+# extension signing key (never commit)
+extensionTest/key.pem
+
+# Flutter web build copied into the backend at deploy time (build artifact)
+Backend/app/web/
+
+# generated participant images (runtime data, lives on the server disk)
+Backend/app/static/reminders/
+
+# local scratch/experiment files — Backend/test.py holds a plaintext API key
+Backend/test.py
+Frontend/test.py
+Backend/sea-otter.png
+
+# participant database — lives on the server disk, never in git
+Backend/app/database/app.db
+
+# env files — real values live only on disk / in the host panel
+Backend/.env
+Backend/app/.env
+
+# runtime data dir: the directory ships, its contents never do
+# Leading slash so this can only ever mean the top-level Backend/data —
+# an unanchored 'data/*' also matched Backend/app/data in the deploy
+# tool's ignore handling, which silently dropped a shipped module.
+/Backend/data/*
+!/Backend/data/.gitkeep
+
+# deploy packages built by scripts/package_deploy.sh
+Backend/dist/
+
+# ...but the extension installer IS served to participants, so track it
+!Backend/app/static/moirai-extension.zip
+
+# stray local copies of the backend — they contain real .env keys
+/Backend copy*/
+/Backend-1/
+
+# hand-copied restore points — they carry real .env keys and app.db
+/before removin jim/

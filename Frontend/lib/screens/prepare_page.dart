@@ -3,7 +3,7 @@ import '../data/study_steps.dart';
 import '../services/api_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/study_scaffold.dart';
-import 'extension_setup_page.dart';
+import '../services/flow_router.dart';
 
 /// Preparation step: while the participant's 3 reminder images + notes are
 /// generated from their confirmed EFT episode, they answer feedback about
@@ -24,6 +24,9 @@ class _PreparePageState extends State<PreparePage> {
   double? _chatExperience;
 
   bool _sending = false;
+  bool _savingFeedback = false;
+  bool _feedbackSaved = false;
+  String? _feedbackError;
 
   // Real reminder generation status. The continue button is gated on these:
   // entering a study session without a reminder image means the participant
@@ -82,6 +85,15 @@ class _PreparePageState extends State<PreparePage> {
       return;
     }
 
+    // A completed request with no generated image is a failure, not a pending job.
+    if (body != null && body['generated'] == false) {
+      setState(() {
+        _generating = false;
+        _generationFailed = true;
+      });
+      return;
+    }
+
     // The request came back empty or timed out — but the image may still be
     // landing server-side, so the answer comes from polling the server rather
     // than from this one response.
@@ -113,50 +125,57 @@ class _PreparePageState extends State<PreparePage> {
     });
   }
 
-  Future<void> _goNext() async {
-    // CURRENT PHASE: feedback is skippable — send what exists, then continue.
-    setState(() => _sending = true);
+  Future<void> _saveFeedback() async {
+    if (_chatExperience == null || _savingFeedback || _feedbackSaved) return;
+    setState(() {
+      _savingFeedback = true;
+      _feedbackError = null;
+    });
     try {
-      final answered = <String, dynamic>{
-        if (_vividness != null) 'vividness': _vividness!.round(),
-        if (_ease != null) 'imagining_ease': _ease!.round(),
-        if (_connection != null) 'future_self_connection': _connection!.round(),
-        if (_chatExperience != null)
-          'chat_experience': _chatExperience!.round(),
-      };
-      if (answered.isNotEmpty) {
-        await ApiService.logEvent(widget.userId, 'eft_feedback', answered);
-      }
+      await ApiService.saveExperienceRating(_chatExperience!.round());
+      if (mounted) setState(() => _feedbackSaved = true);
     } catch (_) {
-      // Never block the study on feedback logging.
+      if (mounted)
+        setState(() => _feedbackError = 'ثبت نشد؛ دوباره امتحان کن.');
     } finally {
-      if (mounted) setState(() => _sending = false);
+      if (mounted) setState(() => _savingFeedback = false);
     }
-    if (!mounted) return;
+  }
+
+  Future<void> _goNext() async {
+    if (_savingFeedback) return;
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (_) => ExtensionSetupPage(userId: widget.userId),
-      ),
+      MaterialPageRoute(builder: (_) => FlowGate(userId: widget.userId)),
     );
   }
 
-  Widget _slider(String label, double? value, ValueChanged<double> onChanged,
-      {String low = 'کم', String high = 'زیاد'}) {
+  Widget _slider(
+    String label,
+    double? value,
+    ValueChanged<double> onChanged, {
+    String low = 'کم',
+    String high = 'زیاد',
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
           style: const TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              color: AppColors.navy),
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            color: AppColors.navy,
+          ),
         ),
         Row(
           children: [
-            Text(low,
-                style: TextStyle(
-                    fontSize: 12, color: AppColors.navy.withOpacity(0.6))),
+            Text(
+              low,
+              style: TextStyle(
+                fontSize: 12,
+                color: AppColors.navy.withOpacity(0.6),
+              ),
+            ),
             Expanded(
               child: Slider(
                 value: value ?? 4,
@@ -169,9 +188,13 @@ class _PreparePageState extends State<PreparePage> {
                 onChanged: onChanged,
               ),
             ),
-            Text(high,
-                style: TextStyle(
-                    fontSize: 12, color: AppColors.navy.withOpacity(0.6))),
+            Text(
+              high,
+              style: TextStyle(
+                fontSize: 12,
+                color: AppColors.navy.withOpacity(0.6),
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 6),
@@ -192,7 +215,9 @@ class _PreparePageState extends State<PreparePage> {
                     ? 'در حال ساختن تصویر آینده‌ات... چند لحظه صبر کن 🌱'
                     : 'هنوز داریم تلاش می‌کنیم... (تلاش ${_retryCount + 1})',
                 style: TextStyle(
-                    fontSize: 13, color: AppColors.navy.withOpacity(0.75)),
+                  fontSize: 13,
+                  color: AppColors.navy.withOpacity(0.75),
+                ),
               ),
             )
           else
@@ -200,14 +225,16 @@ class _PreparePageState extends State<PreparePage> {
           SizedBox(
             width: 190,
             child: StudyPrimaryButton(
-              label: 'ادامه',
+              label: _generationFailed ? 'تلاش دوباره' : 'ادامه',
               busy: _sending,
               // NOT gated on the image. Generation runs server-side and keeps
               // going after this page is left, so making people sit here
               // watching a spinner buys nothing — they can install the
               // extension while it finishes. The gate lives on the extension
               // page instead, which is the last hop into a session.
-              onPressed: _sending ? null : _goNext,
+              onPressed: _sending || _savingFeedback || _generating
+                  ? null
+                  : (_generationFailed ? _prepareReminderPipeline : _goNext),
             ),
           ),
         ],
@@ -235,31 +262,91 @@ class _PreparePageState extends State<PreparePage> {
                       width: 26,
                       height: 26,
                       child: CircularProgressIndicator(
-                          color: AppColors.mint, strokeWidth: 3),
+                        color: AppColors.mint,
+                        strokeWidth: 3,
+                      ),
                     )
                   else if (_generationFailed)
-                    const Icon(Icons.info_outline,
-                        color: AppColors.purple, size: 26)
+                    const Icon(
+                      Icons.info_outline,
+                      color: AppColors.purple,
+                      size: 26,
+                    )
                   else
-                    const Icon(Icons.check_circle_rounded,
-                        color: AppColors.mint, size: 26),
+                    const Icon(
+                      Icons.check_circle_rounded,
+                      color: AppColors.mint,
+                      size: 26,
+                    ),
                   const SizedBox(width: 14),
                   Expanded(
                     child: Text(
                       _generating
                           ? 'در همین لحظه، یادآورهای شخصی تو در حال ساخته شدن هستند... 🎨'
                           : (_generationFailed
-                              ? 'ساخت یادآورها الان جواب نداد؛ نگران نباش، یک یادآور پیش‌فرض جایگزینش شد.'
-                              : 'یادآورهای شخصی‌ات آماده‌ان ✅'),
+                                ? 'ساخت یادآورها الان جواب نداد؛ نگران نباش، یک یادآور پیش‌فرض جایگزینش شد.'
+                                : 'یادآورهای شخصی‌ات آماده‌ان ✅'),
                       style: const TextStyle(
-                          fontSize: 14.5,
-                          height: 1.7,
-                          color: AppColors.navy),
+                        fontSize: 14.5,
+                        height: 1.7,
+                        color: AppColors.navy,
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
+            const SizedBox(height: 24),
+            const Text(
+              'گفتگو چطور بود؟',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: AppColors.navy,
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text('اختیاری · ۱ ضعیف، ۵ عالی'),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (int rating = 1; rating <= 5; rating++)
+                  ChoiceChip(
+                    label: Text('$rating'),
+                    selected: _chatExperience == rating,
+                    onSelected: _savingFeedback || _feedbackSaved
+                        ? null
+                        : (_) => setState(
+                            () => _chatExperience = rating.toDouble(),
+                          ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed:
+                    _chatExperience == null || _savingFeedback || _feedbackSaved
+                    ? null
+                    : _saveFeedback,
+                child: Text(
+                  _feedbackSaved
+                      ? 'ثبت شد، ممنون!'
+                      : _savingFeedback
+                      ? 'در حال ثبت…'
+                      : 'ثبت نظر',
+                ),
+              ),
+            ),
+            if (_feedbackError != null)
+              Text(
+                _feedbackError!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            /* Research feedback questions paused.
             const SizedBox(height: 16),
 
             const Text(
@@ -270,6 +357,7 @@ class _PreparePageState extends State<PreparePage> {
                   color: AppColors.navy),
             ),
             const SizedBox(height: 16),
+            // Additional research feedback
             _slider('تصویری که از آینده‌ات ساختی چقدر واضح و زنده بود؟',
                 _vividness, (v) => setState(() => _vividness = v)),
             _slider('تصور کردن آن لحظه چقدر برایت آسان بود؟', _ease,
@@ -277,9 +365,11 @@ class _PreparePageState extends State<PreparePage> {
                 low: 'سخت', high: 'آسان'),
             _slider('چقدر با «خودِ آینده‌ات» احساس نزدیکی کردی؟', _connection,
                 (v) => setState(() => _connection = v)),
+
             _slider('گفتگو با راهنما چطور بود؟', _chatExperience,
                 (v) => setState(() => _chatExperience = v),
                 low: 'ضعیف', high: 'عالی'),
+            */
           ],
         ),
       ),

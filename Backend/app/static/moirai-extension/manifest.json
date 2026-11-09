@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
   "name": "MoirAI Study Reminder",
-  "version": "2.1",
-  "description": "Shows the participant's assigned reminder immediately after a study-time tab or window switch.",
+  "version": "2.0",
+  "description": "Delivers the study reminder on the scheduled clock and logs disengagement telemetry.",
   "permissions": [
-    "tabs",
+    "alarms",
     "scripting",
-    "storage"
+    "storage",
+    "tabs"
   ],
   "host_permissions": [
     "<all_urls>"

@@ -20,7 +20,7 @@ class DonePage extends StatelessWidget {
               Icon(Icons.check_circle_rounded, color: AppColors.mint, size: 76),
               SizedBox(height: 20),
               Text(
-                'تموم شد — ممنون که همراه بودی 🎉',
+                'برای چیزی که برات مهم بود، وقت گذاشتی 🌱',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 24,
@@ -30,7 +30,7 @@ class DonePage extends StatelessWidget {
               ),
               SizedBox(height: 12),
               Text(
-                'مشارکت تو به ما کمک می‌کند بفهمیم یادآورهای شخصی چطور می‌توانند به یادگیرنده‌ها کمک کنند.\n\nحالا می‌توانی این صفحه را ببندی. ',
+                'وقت یک استراحت کوتاهه.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                     fontSize: 16, height: 1.9, color: AppColors.navy),

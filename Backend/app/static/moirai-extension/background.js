@@ -20,7 +20,6 @@ const ALLOWED_HOSTS = [
 ];
 
 // Minimum time between two overlays, so rapid tab switching doesn't spam.
-const OVERLAY_COOLDOWN_MS = 8000;
 
 // How long the overlay stays visible.
 const OVERLAY_DURATION_MS = 5000;
@@ -31,7 +30,6 @@ const OVERLAY_DURATION_MS = 5000;
 //   studyActive      – true only between SESSION_STARTED / SESSION_ENDED
 //   reminderDataUrl  – prefetched image as data URL (instant overlay)
 //   reminderCue      – prefetched text cue
-//   lastOverlayAt    – cooldown timestamp
 // ─────────────────────────────────────────────────────────────
 
 function isAllowedMoirAI(url = "") {
@@ -101,8 +99,14 @@ async function prefetchReminder() {
       return out;
     }
 
-    // `assets` is already restricted by the backend to this participant's
-    // fixed study arm. Do not choose or randomise the arm in the extension.
+    // `assets` is ALREADY this participant's arm: the eft arm's own images,
+    // or the shared generic set for control. The server withholds the other
+    // arm entirely, so there is nothing here to choose between.
+    //
+    // This used to read `data.personalized || data.assets`. An empty array is
+    // TRUTHY in JavaScript, so a control participant — whose `personalized`
+    // is [] by design — cached nothing, the throw below fired, and the
+    // PREVIOUS participant's images stayed in storage and kept being shown.
     const cached = await cacheAssets(data.assets || []);
     const arm = data.study_group === "control" ? "neutral" : "personalized";
 
@@ -110,6 +114,9 @@ async function prefetchReminder() {
 
     await chrome.storage.local.set({
       reminderAssets: cached,
+      // The arm decides the label, and it comes from the server. Nothing on
+      // this side gets to guess: a wrong label silently moves a participant
+      // between conditions in the analysis.
       studyArm: arm,
       reminderRotation: 0,
     });
@@ -125,8 +132,14 @@ async function prefetchReminder() {
 
 // Next reminder to show, and which condition it belongs to.
 //
-// Between-subjects: the backend fixes the participant's arm and only returns
-// that arm's images. Rotate through those images and report the server's arm.
+// Between-subjects: the participant's ARM is fixed for the whole study and
+// the server only ever sends that arm's images, so there is no choice to make
+// here and no randomisation. This function rotates through what it was given
+// and reports the arm the server stated.
+//
+// It used to roll per trigger against a ratio. That belonged to the earlier
+// within-participant design; kept alongside per-participant arms it produced
+// labels that disagreed with what the server had actually sent.
 async function nextReminder() {
   const { reminderAssets, reminderRotation, studyArm } = await getState([
     "reminderAssets",
@@ -140,6 +153,8 @@ async function nextReminder() {
   await chrome.storage.local.set({ reminderRotation: idx + 1 });
   return {
     ...reminderAssets[idx],
+    // Never defaulted to "personalized": a control participant mislabelled
+    // that way is silently analysed in the wrong arm.
     condition: studyArm === "neutral" ? "neutral" : "personalized",
   };
 }
@@ -158,25 +173,6 @@ async function researchPost(path, body) {
   return res.ok ? await res.json() : null;
 }
 
-// Stamps reminder_shown_timestamp on the latest open trigger row. The
-// frontend creates the tab_switch row on focus-lost, which normally lands
-// first; retry once in case this overlay won the race.
-// `condition` is which arm was actually rendered. It must be passed through
-// to the server: it is the only record of what the participant really saw,
-// and the whole personalized-vs-generic comparison is built on it.
-async function logReminderShown(condition) {
-  try {
-    const body = { condition: condition || "personalized" };
-    let out = await researchPost("/api/research/event/reminder-shown", body);
-    if (!out || out.ok === false) {
-      await new Promise((r) => setTimeout(r, 2000));
-      out = await researchPost("/api/research/event/reminder-shown", body);
-    }
-    console.log("[moirai] reminder-shown stamped:", JSON.stringify(out));
-  } catch (e) {
-    console.warn("[moirai] could not log reminder_shown:", e.message);
-  }
-}
 
 function renderOverlay(dataUrl, cue, durationMs) {
   const oldOverlay = document.getElementById("__moirai_reminder_overlay");
@@ -285,57 +281,118 @@ async function isStudyActive() {
   return !!studyActive;
 }
 
-async function showOverlayIfNotAllowed(tab) {
+// ── SCHEDULED CUE DELIVERY ────────────────────────────────────────────
+// A tab switch NO LONGER SHOWS ANYTHING on its own. It opens a disengagement
+// episode (an outcome measure) and asks the server whether a cue slot happens
+// to be open right now.
+//
+// The server owns the clock. This worker cannot: MV3 evicts and restarts it
+// at Chrome's discretion, so anything it scheduled locally can simply vanish.
+
+async function studyGet(path) {
+  const { eftAccessToken } = await getState("eftAccessToken");
+  if (!eftAccessToken) return null;
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      headers: { Authorization: `Bearer ${eftAccessToken}` },
+    });
+    return res.ok ? await res.json() : null;
+  } catch (e) {
+    console.warn("[moirai] GET", path, "failed:", e.message);
+    return null;
+  }
+}
+
+// Which disengagement episode this worker believes is open. Stored rather
+// than held in memory because the service worker is evicted between events,
+// and an unpaired start would leave an episode open forever — its duration
+// NULL, silently dropping it out of time-on-task.
+async function openEpisode(type) {
+  const { episodeOpen } = await getState("episodeOpen");
+  if (episodeOpen) return;
+  await chrome.storage.local.set({ episodeOpen: true });
+  await researchPost("/api/study/disengagement/start", { type });
+  console.log("[moirai] disengagement opened:", type);
+}
+
+async function closeEpisode(endedBy = "return") {
+  const { episodeOpen } = await getState("episodeOpen");
+  if (!episodeOpen) return;
+  await chrome.storage.local.set({ episodeOpen: false });
+  await researchPost("/api/study/disengagement/end", { ended_by: endedBy });
+  console.log("[moirai] disengagement closed:", endedBy);
+}
+
+// Delivers a scheduled cue IF one is due and this client should own it.
+// `state` is off_tab or off_browser — the only two states this side can
+// legitimately report. The app reports active/idle; the arm decides the
+// condition, and neither client is asked for it.
+async function maybeDeliverScheduledCue(tab, state = "off_tab") {
   if (!tab || !tab.id) return;
 
   const url = tab.url || "";
-  if (isAllowedMoirAI(url)) {
-    console.log("[moirai] on study site — no overlay");
-    return;
-  }
-  if (!canInject(url)) {
-    console.log("[moirai] cannot inject into:", url || "(empty/chrome page)");
-    return;
-  }
+  if (isAllowedMoirAI(url)) return; // on the study site — the app's job
 
-  // Gate on the BACKEND session flag (source of truth, no message needed).
   const active = await isStudyActive();
-  if (!active) {
-    console.log("[moirai] gate: study session not active — no overlay");
+  if (!active) return;
+
+  // Ask FIRST. Outside the two windows the answer is null, which is the
+  // common case and the whole point: disengagement no longer triggers a cue.
+  const due = await studyGet("/api/study/cue/due");
+  if (!due || due.due_slot == null) return;
+
+  if (!canInject(url)) {
+    // chrome://, the PDF viewer, the Web Store. Do NOT claim: claiming here
+    // would burn the slot on a tab that cannot render it, and the
+    // participant would be recorded as having received a cue they never saw.
+    // The slot stays open for the rest of its grace window and the next tab
+    // event retries.
+    console.log("[moirai] slot", due.due_slot,
+      "due but cannot inject into:", url || "(chrome page)");
     return;
   }
 
-  const { lastOverlayAt } = await getState("lastOverlayAt");
-  const now = Date.now();
-  if (lastOverlayAt && now - lastOverlayAt < OVERLAY_COOLDOWN_MS) {
-    console.log("[moirai] overlay suppressed by cooldown");
+  const grant = await researchPost("/api/study/cue/claim", {
+    state,
+    claimed_by: "extension",
+  });
+  if (!grant || !grant.granted) {
+    // Almost always means the app won the race, which is correct behaviour.
+    console.log("[moirai] slot not granted:",
+      grant ? grant.reason : "no response");
     return;
   }
-  await chrome.storage.local.set({ lastOverlayAt: now });
+
+  const asset = grant.asset || {};
+  const imageUrl = asset.image_url || "";
+  if (!imageUrl) {
+    console.warn("[moirai] cue granted with no image");
+    return;
+  }
+
+  // Prefer the prefetched cache so nothing has to load at trigger time; fall
+  // back to the URL the grant carried.
+  let dataUrl = null;
+  try {
+    const cached = await nextReminder();
+    dataUrl = cached && cached.dataUrl ? cached.dataUrl : null;
+  } catch (e) {
+    console.warn("[moirai] cache read failed:", e.message);
+  }
+  if (!dataUrl) {
+    dataUrl = imageUrl.startsWith("http") ? imageUrl : `${API_BASE}${imageUrl}`;
+  }
 
   try {
-    // Use the prefetched cache — instant, no network at trigger time.
-    let reminder = await nextReminder();
-    if (!reminder) {
-      console.log("[moirai] no cache yet — fetching now");
-      await prefetchReminder();
-      reminder = await nextReminder();
-    }
-    if (!reminder) {
-      console.warn("[moirai] no reminder available to show (generation done?)");
-      return;
-    }
-
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: renderOverlay,
-      args: [reminder.dataUrl, reminder.cue || "", OVERLAY_DURATION_MS],
+      args: [dataUrl, asset.cue || "", OVERLAY_DURATION_MS],
     });
-
-    console.log(
-      `[moirai] ✅ overlay shown (${reminder.condition}) on:`, url
-    );
-    await logReminderShown(reminder.condition);
+    await chrome.storage.local.set({ activeDeliveryId: grant.delivery_id });
+    await researchPost(`/api/study/cue/${grant.delivery_id}/shown`, {});
+    console.log(`[moirai] ✅ scheduled cue slot ${grant.slot} shown ` +
+      `(${grant.condition}, state=${state}) on:`, url);
   } catch (error) {
     console.error("[moirai] overlay failed:", error);
   }
@@ -346,9 +403,15 @@ chrome.runtime.onMessage.addListener((message) => {
   if (message && message.action === "RETURN_TO_STUDY") {
     (async () => {
       try {
-        await researchPost("/api/research/event/return", {
-          clicked_return: true,
-        });
+        const { activeDeliveryId } = await getState("activeDeliveryId");
+        if (activeDeliveryId) {
+          await researchPost(
+            `/api/study/cue/${activeDeliveryId}/interaction`,
+            { clicked_return: true });
+        }
+        // Closing the episode is what resolves RETURN LATENCY server-side —
+        // the primary measure for a cue delivered to someone already away.
+        await closeEpisode("return");
       } catch (e) {
         console.warn("[moirai] clicked_return log failed:", e.message);
       }
@@ -362,9 +425,24 @@ chrome.runtime.onMessage.addListener((message) => {
   }
 });
 
-async function checkActiveTab() {
+// Every tab/window event does two things now: keep the disengagement log
+// honest, and give a due cue another chance to land.
+async function onAttentionChanged(tab, state = "off_tab") {
+  if (!tab) return;
+  if (!(await isStudyActive())) return;
+
+  if (isAllowedMoirAI(tab.url || "")) {
+    // Back on the study site — the absence is over.
+    await closeEpisode("return");
+    return;
+  }
+  await openEpisode("tab_switch");
+  await maybeDeliverScheduledCue(tab, state);
+}
+
+async function checkActiveTab(state = "off_tab") {
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-  await showOverlayIfNotAllowed(tabs[0]);
+  await onAttentionChanged(tabs[0], state);
 }
 
 // Case 1: switching to any old or new tab
@@ -382,12 +460,32 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   });
   if (!activeTabs[0] || activeTabs[0].id !== tabId) return;
 
-  await showOverlayIfNotAllowed(tab);
+  await onAttentionChanged(tab);
 });
 
-// Case 3: clicking/focusing another Chrome window
+// Case 3: Chrome window focus. WINDOW_ID_NONE means Chrome itself lost focus
+// — the participant is in another application entirely. That used to return
+// early and record nothing, which made "watching a video in another app"
+// indistinguishable from "reading attentively".
 chrome.windows.onFocusChanged.addListener(async (windowId) => {
-  if (windowId === chrome.windows.WINDOW_ID_NONE) return;
+  if (windowId === chrome.windows.WINDOW_ID_NONE) {
+    await checkActiveTab("off_browser");
+    return;
+  }
+  await checkActiveTab();
+});
+
+// Case 4: the safety net. Tab events are plentiful, but a participant who
+// opens one distractor tab and sits on it generates NONE — and that is
+// exactly the person a scheduled cue exists for. The alarm guarantees the
+// slot is checked even when nothing on screen changes.
+//
+// 30s is the MV3 floor, so a cue can be up to 30s late in the worst case.
+// That is why every delivery records delivery_offset_ms: the timing is
+// audited rather than assumed.
+chrome.alarms.create("moirai-cue-check", { periodInMinutes: 0.5 });
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name !== "moirai-cue-check") return;
   await checkActiveTab();
 });
 
@@ -401,16 +499,24 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
       sendResponse({ success: false, error: "Missing access token" });
       return;
     }
-    // Storage survives browser restarts and account changes. Clear all cached
-    // intervention data before attaching a new participant token.
+    // WIPE the previous participant's cached reminders first.
+    //
+    // chrome.storage.local survives logout, account switches and browser
+    // restarts. Without this, a second participant on the same browser
+    // inherits the first one's images — and if their own prefetch fails for
+    // any reason, they are shown a stranger's future and it is recorded as
+    // their own reminder. That is cross-participant contamination, not a
+    // display glitch, and it has already happened during testing.
     chrome.storage.local.remove(
       ["reminderAssets", "reminderGeneric", "reminderRotation",
-       "genericRotation", "genericRatio", "studyArm", "lastOverlayAt"],
+       "genericRotation", "genericRatio", "studyArm",
+       "episodeOpen", "activeDeliveryId"],
       () => {
         chrome.storage.local.set(
           { eftAccessToken: token, eftConnectedAt: Date.now() },
           async () => {
             console.log("[moirai] connected — previous cache cleared");
+            // Prefetch right away so the first overlay is instant.
             await prefetchReminder();
             sendResponse({ success: true });
           }
@@ -441,7 +547,13 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
 
       const patch = { studyActive: true, lastKnownActive: true };
       if (tokenChanged) patch.eftAccessToken = newToken;
-      if (freshStart) patch.lastOverlayAt = 0;
+      // A fresh session must not inherit the previous one's open
+      // episode or delivery id, or the first return would close an
+      // episode that belongs to another session.
+      if (freshStart) {
+        patch.episodeOpen = false;
+        patch.activeDeliveryId = null;
+      }
       await chrome.storage.local.set(patch);
 
       if (freshStart) {

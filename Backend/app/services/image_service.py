@@ -1,541 +1,3 @@
-# """Personalized reminder generation (image + text cue).
-
-# Turns the participant's confirmed EFT episode into:
-#   - an AI-generated image saved under app/static/reminders/
-#   - a short future-oriented Persian text cue
-
-# Reliability first: every step has a fallback so the study never blocks on
-# OpenAI. If image generation fails, the previous/placeholder image URL is kept.
-# """
-
-# from __future__ import annotations
-
-# import base64
-# import json
-# import time
-# from pathlib import Path
-
-# from sqlalchemy.orm import Session
-
-# from app.config import IMAGE_MODEL, PROMPT_MODEL, openai_client
-# from app.database import models
-# import traceback
-# import os
-
-
-# STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
-# REMINDERS_DIR = STATIC_DIR / "reminders"
-
-# FALLBACK_CUE = "همان لحظه‌ای که برایش تلاش می‌کنم — دارم می‌بینمش."
-
-# # Enforced on EVERY generated image prompt (appended server-side so the
-# # per-scene prompt can never override the study's visual requirements:
-# # realistic, face never visible, setting + feeling emphasized, no text,
-# # and — importantly — anatomically clean, no close-ups of hands, since
-# # generators produce disturbing extra-fingers/extra-hands artifacts there).
-# IMAGE_STYLE_SUFFIX = (
-#     ". Photorealistic photograph, warm natural light, calm cinematic "
-#     "composition, shallow depth of field. FIRST-PERSON POINT OF VIEW: the "
-#     "camera is the learner's own eyes, so we see the moment exactly as they "
-#     "see it — the room, the people facing them, the desk in front of them. "
-#     "Because it is their own viewpoint, the learner themself is simply not "
-#     "in the frame; this must look like a natural photograph taken from where "
-#     "they stand, never like a portrait with a hidden or cropped face. Other "
-#     "people in the scene may be seen naturally at a comfortable distance. "
-#     "Do NOT make hands the subject and do NOT show close-ups of hands or "
-#     "fingers; if any of the learner's own hands appear at the frame edge "
-#     "keep them small, natural and incidental, with correct human anatomy "
-#     "(no extra limbs or fingers). Emphasize the SETTING and the calm, "
-#     "hopeful FEELING of the moment. No readable text, letters, numbers, "
-#     "logos or signs anywhere in the image."
-# )
-
-# # Episode field keys (the 7 EFT questions, work-step-12 format — must match
-# # eft_chat_service_v2.QUESTIONS order).
-# _EPISODE_KEYS = [
-#     "goal",     # 1. English-learning goal
-#     "where",    # 2. where they are in that future moment
-#     "when",     # 3. when it happens
-#     "action",   # 4. what exactly they are doing
-#     "objects",  # 5. objects/details around them
-#     "who",      # 6. alone, or who is with them
-#     "feeling",  # 7. how they feel in that moment
-# ]
-
-
-# # Client factory lives in app/config.py so base_url + key are applied
-# # identically everywhere (see openai_client).
-# _client = openai_client
-
-# # Simple on/off switch and helper for debug printing
-# DEBUG = True
-
-# def _dbg(*args, **kwargs):
-#     if DEBUG:
-#         print("[image_service DEBUG]", *args, **kwargs)
-
-
-# def _latest_episode_fields(db: Session, user_id: int) -> dict:
-#     _dbg("_latest_episode_fields: fetching episode for user", user_id)
-#     episode = (
-#         db.query(models.EFTEpisode)
-#         .filter(models.EFTEpisode.user_id == user_id)
-#         .order_by(models.EFTEpisode.created_at.desc())
-#         .first()
-#     )
-#     if episode is None:
-#         _dbg("_latest_episode_fields: no episode found for user", user_id)
-#         return {}
-#     try:
-#         return json.loads(episode.episode_json)
-#     except Exception:
-#         _dbg("_latest_episode_fields: failed to parse episode JSON for user", user_id)
-#         _dbg("raw episode_json:", getattr(episode, 'episode_json', None))
-#         _dbg(traceback.format_exc())
-#         return {}
-
-
-# def _episode_text(fields: dict) -> str:
-#     parts = []
-#     for key in _EPISODE_KEYS:
-#         value = fields.get(key)
-#         if value:
-#             parts.append(f"{key}: {value}")
-#     summary = fields.get("_summary")
-#     if summary:
-#         parts.append(f"summary: {summary}")
-#     return "\n".join(parts)
-
-
-# def _log_prompt(db: Session, user_id: int, purpose: str,
-#                 prompt_text: str, response_preview: str) -> None:
-#     try:
-#         db.add(models.AIPrompt(
-#             user_id=user_id,
-#             model_name="gpt-4o-mini/gpt-image-1",
-#             prompt_text=prompt_text,
-#             purpose=purpose,
-#             response_preview=response_preview[:500],
-#         ))
-#     except Exception as e:
-#         _dbg(f"⚠️ Could not log AI prompt: {e}")
-#         _dbg(traceback.format_exc())
-
-
-# def generate_cue(db: Session, user_id: int, fields: dict) -> str:
-#     """One short future-oriented Persian sentence tied to the episode."""
-#     summary = (fields.get("_summary") or "").strip()
-#     client = _client()
-#     episode_text = _episode_text(fields)
-
-#     if client is not None and episode_text:
-#         prompt = (
-#             "بر اساس این اپیزود آینده‌نگری کاربر، فقط «یک» جمله‌ی کوتاه فارسی "
-#             "(حداکثر ۲۰ کلمه) بنویس که مثل یک یادآور گرم و شخصی، لحظه‌ی آینده‌ی "
-#             "او را زنده کند.\n"
-#             "جمله باید «اول‌شخص» و از زبان خودِ کاربر باشد (من/دارم/می‌بینم…) — "
-#             "انگار فکر خودش است؛ هرگز او را با «تو» خطاب نکن. "
-#             "اول حس، بعد موقعیت. بدون نصیحت، بدون گیومه، فقط همان یک جمله.\n\n"
-#             f"{episode_text}"
-#         )
-#         try:
-#             res = client.chat.completions.create(
-#                 model=PROMPT_MODEL,
-#                 messages=[{"role": "user", "content": prompt}],
-#                 max_tokens=80,
-#                 temperature=0.9,
-#             )
-#             try:
-#                 _dbg("generate_cue: raw response preview:", str(res)[:1000])
-#             except Exception:
-#                 _dbg("generate_cue: could not stringify response")
-#             cue = (res.choices[0].message.content or "").strip().strip('"«»')
-#             if cue:
-#                 _log_prompt(db, user_id, "reminder_cue", prompt, cue)
-#                 return cue
-#         except Exception as e:
-#             _dbg(f"⚠️ Cue generation failed: {e}")
-#             _dbg(traceback.format_exc())
-
-#     if summary:
-#         return summary[:180]
-#     return FALLBACK_CUE
-
-
-# def _gender_rule(raw_gender: str | None) -> str:
-#     """English prompt fragment describing the learner's gender.
-
-#     Only applied when the participant explicitly chose زن/مرد in the baseline
-#     profile — otherwise the figure stays ambiguous. Faces are never visible,
-#     so HAIR is the visual gender cue: short brown hair for men, long/medium
-#     brown hair (wavy or straight) for women.
-#     """
-#     gender = (raw_gender or "").strip()
-#     if gender == "زن":
-#         return ("The learner is a WOMAN: whenever the figure appears, give "
-#                 "her long or medium-length brown hair (wavy or straight) so "
-#                 "she reads clearly as a woman even from behind — still shown "
-#                 "from behind / over-the-shoulder, never identifiable. ")
-#     if gender == "مرد":
-#         return ("The learner is a MAN: whenever the figure appears and hair "
-#                 "is visible, give him short brown hair so he reads clearly "
-#                 "as a man even from behind — still shown from behind / "
-#                 "over-the-shoulder, never identifiable. ")
-#     return ("Do NOT specify or imply the learner's gender; "
-#             "keep the figure ambiguous and dont show their face (from behind, distant, "
-#             "or setting-only). ")
-
-
-# def _build_image_prompt(db: Session, user_id: int, fields: dict) -> str:
-#     episode_text = _episode_text(fields)
-#     fallback_prompt = (
-#         "A warm, hopeful digital illustration of a young person achieving "
-#         "their English-learning goal in the near future, soft light, "
-#         "optimistic mood, no text, no words in the image and no faces naturally visible."
-#     )
-#     client = _client()
-#     if client is None or not episode_text:
-#         return fallback_prompt
-
-#     user = db.query(models.User).filter(models.User.id == user_id).first()
-#     prompt = (
-#         "Write a single vivid English prompt (max 70 words) for an image "
-#         "generation model. The image must depict this person's imagined "
-#         "positive future moment in FIRST-PERSON point of view — the camera is "
-#         "their own eyes, so they are naturally out of frame (never their face, "
-#         "never their back, never a cropped face). Warm optimistic photographic "
-#         "style, soft lighting. Strictly no text, letters or words in the "
-#         "image. "
-#         + _gender_rule(user.gender if user else None) +
-#         "Base it faithfully on this episode (written in Persian):\n\n"
-#         f"{episode_text}"
-#     )
-#     try:
-#         _dbg("_build_image_prompt: sending prompt to text model (preview):", prompt[:600])
-#         res = client.chat.completions.create(
-#             model=PROMPT_MODEL,
-#             messages=[{"role": "user", "content": prompt}],
-#             max_tokens=140,
-#             temperature=0.8,
-#         )
-#         try:
-#             _dbg("_build_image_prompt: raw response preview:", str(res)[:1000])
-#         except Exception:
-#             _dbg("_build_image_prompt: could not stringify response")
-#         image_prompt = (res.choices[0].message.content or "").strip()
-#         if image_prompt:
-#             _log_prompt(db, user_id, "reminder_image_prompt", prompt, image_prompt)
-#             return image_prompt
-#     except Exception as e:
-#         _dbg(f"⚠️ Image prompt generation failed: {e}")
-#         _dbg(traceback.format_exc())
-#     return fallback_prompt
-
-
-# def generate_image(db: Session, user_id: int, fields: dict) -> str | None:
-#     """Generates the reminder image and returns its /static/... URL path.
-
-#     Returns None on any failure (caller keeps the previous image URL).
-#     """
-#     client = _client()
-#     if client is None:
-#         return None
-
-#     image_prompt = _build_image_prompt(db, user_id, fields)
-#     _dbg("generate_image: image_prompt (truncated):", image_prompt[:400])
-#     try:
-#         _dbg("generate_image: calling images.generate with model", IMAGE_MODEL)
-#         res = client.images.generate(
-#             model=IMAGE_MODEL,
-#             prompt=image_prompt,
-#             size="1024x1024",
-#             quality="low",
-#             n=1,
-#         )
-#         try:
-#             _dbg("generate_image: raw images.generate response preview:", str(res)[:1000])
-#         except Exception:
-#             _dbg("generate_image: could not stringify images.generate response")
-#         data = getattr(res, 'data', None)
-#         if not data:
-#             _dbg("generate_image: response has no data field", getattr(res, '__dict__', None))
-#             return None
-#         b64 = data[0].b64_json
-#         if not b64:
-#             _dbg("generate_image: no b64 data in response data[0]", data[0])
-#             return None
-#         REMINDERS_DIR.mkdir(parents=True, exist_ok=True)
-#         filename = f"user_{user_id}.png"
-#         outpath = REMINDERS_DIR / filename
-#         outpath.write_bytes(base64.b64decode(b64))
-#         try:
-#             _dbg("generate_image: wrote file", str(outpath), "size=", os.path.getsize(outpath))
-#         except Exception:
-#             _dbg("generate_image: wrote file but could not stat it", str(outpath))
-#         _log_prompt(db, user_id, "reminder_image", image_prompt, filename)
-#         # Cache-busting version so the extension refetches after regeneration.
-#         return f"/static/reminders/{filename}?v={int(time.time())}"
-#     except Exception as e:
-#         _dbg(f"⚠️ Image generation failed: {e}")
-#         _dbg(traceback.format_exc())
-#         return None
-
-
-# # Few-shot guidance for the reminder-set meta-prompt (condensed from the
-# # research team's examples: 7 EFT answers → image description → short cue).
-# _FEW_SHOT = """
-# EXAMPLE A (episode: goal=participate in university discussions in English;
-# situation=seminar abroad, sharing my opinion; when=one year from now;
-# where=small university classroom, round table, projector; who=professor and
-# ~12 classmates; saying="I agree with the author's main point, but the example
-# is too narrow."; feeling=a little nervous, but proud and included)
-# → image_prompt: "First-person view from a seat at a round seminar table: a
-# warm university classroom seen through the learner's own eyes, notebooks and
-# papers on the table in front, a projector screen glowing ahead, about twelve
-# classmates and the professor across the table looking towards the viewer and
-# listening. Academic, welcoming, slightly exciting atmosphere."
-# → cue: "کمی مضطربم اما سربلند، در کلاس دانشگاه دارم به انگلیسی نظرم را می‌گویم."
-
-# EXAMPLE B (episode: goal=speak confidently in work meetings;
-# situation=weekly team meeting with international colleagues; where=home desk
-# via laptop; who=manager, designers, engineers; feeling=calm, confident, proud)
-# → image_prompt: "First-person view down at a calm home-office desk: a laptop
-# open to an online team meeting with a grid of small colleague windows, a
-# notebook and a coffee cup beside it, soft daylight falling from a window
-# just ahead. Seen exactly as the learner sees it, focused, professional and
-# calm."
-# → cue: "آرام و مطمئنم، پشت میزم دارم ایده‌هایم را شفاف به انگلیسی می‌گویم."
-# """
-
-
-# def generate_reminder_set(db: Session, user: models.User,
-#                           count: int = 1) -> list[models.ReminderAsset]:
-#     """Step 10: generates `count` distinct reminder images + cues from the
-#     participant's EFT episode (7-question format) and stores them as
-#     ReminderAsset rows.
-
-#     Image goals: photorealistic, faithful to the episode's SETTING and
-#     FEELING, the learner's face never visible (from behind / shoulders-down /
-#     hands only, or the setting alone), no readable text in the image.
-#     Cue goals: one short Persian sentence, FEELING first, then the situation
-#     (e.g. " سربلند در کلاس دانشگاه، ...").
-
-#     Falls back gracefully: any image that fails is skipped; if all fail the
-#     existing reminder (placeholder) stays in place.
-#     """
-#     fields = _latest_episode_fields(db, user.id)
-#     episode_text = _episode_text(fields)
-#     client = _client()
-
-#     # 1) One LLM call → `count` distinct {image_prompt, cue} pairs.
-#     pairs: list[dict] = []
-#     if client is not None and episode_text:
-#         angle_rule = (
-#             "Each variation is the SAME episode seen through the learner's "
-#             "own eyes, but looking in a DIFFERENT direction: 1) straight "
-#             "ahead at the people or screen they are addressing, 2) down and "
-#             "across their own desk/table and what is on it, 3) a wider sweep "
-#             "of the whole room from where they stand. NEVER a close-up of "
-#             "hands or fingers."
-#             if count > 1 else
-#             "Produce the single strongest first-person view: what the learner "
-#             "sees in front of them at that exact moment, the setting clearly "
-#             "recognizable and the feeling palpable. Do NOT focus on hands."
-#         )
-#         gender_rule = _gender_rule(user.gender)
-
-#         prompt = (
-#             "You create reminder assets for an Episodic Future Thinking study "
-#             "with English learners. The participant answered 7 questions about "
-#             "an imagined future moment (below, answers may be in Persian). "
-#             + gender_rule +
-#             f"Produce EXACTLY {count} item(s) as a JSON array. Each item: "
-#             '{"image_prompt": "...", "cue": "..."}.\n\n'
-#             "image_prompt rules (write in English, max 75 words): describe a "
-#             "REALISTIC photographic scene faithful to THIS episode — the "
-#             "specific place, objects, people and atmosphere the participant "
-#             "described, seen in FIRST-PERSON, through the learner's own eyes, "
-#             "as if they were holding the camera at eye level. The learner is "
-#             "therefore naturally out of frame — never describe their face, "
-#             "their back, or a hidden/cropped face. Do NOT make hands the "
-#             "subject and never a close-up of hands/fingers. Emphasize the "
-#             f"setting and the feeling. No readable text or signs. {angle_rule}\n\n"
-#             "cue rules (write in Persian, max 18 words): one warm "
-#             "FIRST-PERSON sentence in the participant's own voice (من/دارم/"
-#             "می‌بینم…), FEELING FIRST then the situation — like «آرام و مطمئنم، "
-#             "پشت میزم دارم ...». Never address them as «تو»; the sentence must "
-#             "sound like their own thought. No advice, no quotes.\n\n"
-#             f"Follow the style of these examples:\n{_FEW_SHOT}\n"
-#             "Return ONLY the JSON array.\n\nEPISODE ANSWERS:\n" + episode_text
-#         )
-#         try:
-#             res = client.chat.completions.create(
-#                 model=PROMPT_MODEL,
-#                 messages=[{"role": "user", "content": prompt}],
-#                 max_tokens=900,
-#                 temperature=0.9,
-#             )
-#             raw = (res.choices[0].message.content or "").strip()
-#             raw = raw.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-#             parsed = json.loads(raw)
-#             if isinstance(parsed, list):
-#                 pairs = [p for p in parsed if isinstance(p, dict)][:count]
-#             _log_prompt(db, user.id, "reminder_set_prompts", prompt, raw)
-#         except Exception as e:
-#             print(f"⚠️ Reminder-set prompt generation failed: {e}")
-
-#     if not pairs:
-#         # Deterministic fallback prompts (first-person, learner out of frame).
-#         base = (
-#             "Photorealistic photograph, warm natural light, no readable text. "
-#             "First-person point of view — the camera is the learner's own "
-#             "eyes at their hopeful future moment of succeeding at English, so "
-#             "they are naturally out of frame: "
-#         )
-#         pairs = [
-#             {"image_prompt": base + "looking ahead at the people and place of "
-#              "their goal, calm and inviting.",
-#              "cue": FALLBACK_CUE},
-#             {"image_prompt": base + "looking down across their own desk and "
-#              "the things on it, calm and inviting.",
-#              "cue": FALLBACK_CUE},
-#             {"image_prompt": base + "a wide view of the whole room from where "
-#              "they stand, warm and hopeful.",
-#              "cue": FALLBACK_CUE},
-#         ][:count]
-
-#     # 2) Generate the images.
-#     assets: list[models.ReminderAsset] = []
-#     if client is not None:
-#         REMINDERS_DIR.mkdir(parents=True, exist_ok=True)
-#         for i, pair in enumerate(pairs):
-#             try:
-#                 _dbg("generate_reminder_set: generating image", i, "prompt (truncated):", str(pair.get("image_prompt") or "")[:400])
-#                 res = client.images.generate(
-#                     model=IMAGE_MODEL,
-#                     prompt=str(pair.get("image_prompt") or "") + IMAGE_STYLE_SUFFIX,
-#                     size="1024x1024",
-#                     quality="medium",  # realistic photo style needs medium+
-#                     n=1,
-#                 )
-#                 try:
-#                     _dbg("generate_reminder_set: images.generate raw preview:", str(res)[:1000])
-#                 except Exception:
-#                     _dbg("generate_reminder_set: could not stringify images.generate response")
-#                 data = getattr(res, 'data', None)
-#                 if not data:
-#                     _dbg("generate_reminder_set: no data in images.generate response for index", i)
-#                     continue
-#                 b64 = data[0].b64_json
-#                 if not b64:
-#                     _dbg("generate_reminder_set: empty b64 for image", i)
-#                     continue
-#                 filename = f"user_{user.id}_{i}.png"
-#                 outpath = REMINDERS_DIR / filename
-#                 outpath.write_bytes(base64.b64decode(b64))
-#                 _dbg("generate_reminder_set: wrote file", str(outpath), "size=", os.path.getsize(outpath))
-#                 assets.append(models.ReminderAsset(
-#                     user_id=user.id,
-#                     asset_index=i,
-#                     image_url=f"/static/reminders/{filename}?v={int(time.time())}",
-#                     cue=str(pair.get("cue") or FALLBACK_CUE),
-#                 ))
-#                 _log_prompt(db, user.id, f"reminder_image_{i}",
-#                             str(pair.get("image_prompt")), filename)
-#             except Exception as e:
-#                 _dbg(f"⚠️ Image {i} generation failed: {e}")
-#                 _dbg(traceback.format_exc())
-
-#     # 3) Replace old assets; keep ExtensionReminder pointing at asset 0.
-#     if assets:
-#         db.query(models.ReminderAsset).filter(
-#             models.ReminderAsset.user_id == user.id).delete()
-#         for a in assets:
-#             db.add(a)
-
-#         reminder = (
-#             db.query(models.ExtensionReminder)
-#             .filter(models.ExtensionReminder.user_id == user.id)
-#             .first()
-#         )
-#         if reminder is None:
-#             reminder = models.ExtensionReminder(
-#                 user_id=user.id,
-#                 image_url=assets[0].image_url, cue=assets[0].cue)
-#             db.add(reminder)
-#         else:
-#             reminder.image_url = assets[0].image_url
-#             reminder.cue = assets[0].cue
-#         db.commit()
-#         for a in assets:
-#             db.refresh(a)
-#     return assets
-
-
-# def create_placeholder_reminder(db: Session, user: models.User) -> models.ExtensionReminder:
-#     """Stores a placeholder image under the user's id — full pipeline test
-#     (file keyed to user, served via /static, fetched by the extension)
-#     without any OpenAI cost. Used during work step 8 debugging.
-#     """
-#     import shutil
-
-#     REMINDERS_DIR.mkdir(parents=True, exist_ok=True)
-#     src = STATIC_DIR / "placeholder_reminder.png"
-#     dst = REMINDERS_DIR / f"user_{user.id}.png"
-#     if src.exists():
-#         shutil.copyfile(src, dst)
-#     image_url = f"/static/reminders/user_{user.id}.png?v={int(time.time())}"
-
-#     reminder = (
-#         db.query(models.ExtensionReminder)
-#         .filter(models.ExtensionReminder.user_id == user.id)
-#         .first()
-#     )
-#     if reminder is None:
-#         reminder = models.ExtensionReminder(user_id=user.id, image_url=image_url)
-#         db.add(reminder)
-#     else:
-#         reminder.image_url = image_url
-#     reminder.cue = FALLBACK_CUE
-
-#     db.commit()
-#     db.refresh(reminder)
-#     return reminder
-
-
-# def generate_reminder(db: Session, user: models.User) -> models.ExtensionReminder:
-#     """Creates/updates the user's ExtensionReminder from their EFT episode.
-
-#     Never raises: on failure the existing (or placeholder) values are kept.
-#     """
-#     fields = _latest_episode_fields(db, user.id)
-
-#     reminder = (
-#         db.query(models.ExtensionReminder)
-#         .filter(models.ExtensionReminder.user_id == user.id)
-#         .first()
-#     )
-#     if reminder is None:
-#         reminder = models.ExtensionReminder(
-#             user_id=user.id,
-#             image_url=f"https://picsum.photos/seed/moirai-user-{user.id}/900/600",
-#             cue=FALLBACK_CUE,
-#         )
-#         db.add(reminder)
-
-#     cue = generate_cue(db, user.id, fields)
-#     if cue:
-#         reminder.cue = cue
-
-#     image_url = generate_image(db, user.id, fields)
-#     if image_url:
-#         reminder.image_url = image_url
-
-#     db.commit()
-#     db.refresh(reminder)
-#     return reminder
-
-
 """Personalized reminder generation (image + text cue).
 
 Turns the participant's confirmed EFT episode into:
@@ -587,7 +49,11 @@ IMAGE_STYLE_SUFFIX = (
     "Because it is their own viewpoint, the learner themself is simply not "
     "in the frame; this must look like a natural photograph taken from where "
     "they stand, never like a portrait with a hidden or cropped face. Other "
-    "people in the scene may be seen naturally at a comfortable distance. "
+    "people must have no recognizable or detailed faces: use natural neck-down framing "
+    "or gentle photographic depth-of-field blur across their faces. Prefer naturally "
+    "composed waist-up bodies cropped below the chin, or distant softly defocused people. "
+    "Never blank, erase, mask, pixelate, deform, or obscure faces with objects; no "
+    "headless-looking bodies, uncanny faceless skin, or unsettling silhouettes. "
     "Do NOT make hands the subject and do NOT show close-ups of hands or "
     "fingers; if any of the learner's own hands appear at the frame edge "
     "keep them small, natural and incidental, with correct human anatomy "
@@ -599,7 +65,7 @@ IMAGE_STYLE_SUFFIX = (
 # Episode field keys (the 7 EFT questions, work-step-12 format — must match
 # eft_chat_service_v2.QUESTIONS order).
 _EPISODE_KEYS = [
-    "goal",     # 1. English-learning goal
+    "goal",     # 1. the academic goal (defence, graduation, publication)
     "where",    # 2. where they are in that future moment
     "when",     # 3. when it happens
     "action",   # 4. what exactly they are doing
@@ -814,8 +280,8 @@ def _gender_rule(raw_gender: str | None) -> str:
 def _build_image_prompt(db: Session, user_id: int, fields: dict) -> str:
     episode_text = _episode_text(fields)
     fallback_prompt = (
-        "A warm, hopeful digital illustration of a young person achieving "
-        "their English-learning goal in the near future, soft light, "
+        "A warm, hopeful digital illustration of a young student achieving "
+        "their academic goal in the near future, soft light, "
         "optimistic mood, no text, no words in the image and no faces naturally visible."
     )
     client = _client()
@@ -883,28 +349,35 @@ def generate_image(db: Session, user_id: int, fields: dict) -> str | None:
 
 # Few-shot guidance for the reminder-set meta-prompt (condensed from the
 # research team's examples: 7 EFT answers → image description → short cue).
+#
+# The two examples are ACADEMIC on purpose. The old ones were English-class
+# scenes, and a few-shot set that models a different domain teaches the
+# generator to reach for that domain's imagery regardless of what the
+# participant actually described — the participant's own episode was losing
+# to the example's.
 _FEW_SHOT = """
-EXAMPLE A (episode: goal=participate in university discussions in English;
-situation=seminar abroad, sharing my opinion; when=one year from now;
-where=small university classroom, round table, projector; who=professor and
-~12 classmates; saying="I agree with the author's main point, but the example
-is too narrow."; feeling=a little nervous, but proud and included)
-→ image_prompt: "First-person view from a seat at a round seminar table: a
-warm university classroom seen through the learner's own eyes, notebooks and
-papers on the table in front, a projector screen glowing ahead, about twelve
-classmates and the professor across the table looking towards the viewer and
-listening. Academic, welcoming, slightly exciting atmosphere."
-→ cue: "کمی مضطربم اما سربلند، در کلاس دانشگاه دارم به انگلیسی نظرم را می‌گویم."
+EXAMPLE A (episode: goal=defend my thesis; situation=presenting my results
+to the committee; when=one year from now; where=university defence hall,
+round table, projector; who=supervisor and ~4 examiners; saying="my results
+support the hypothesis I set out at the start."; feeling=a little nervous,
+but proud and relieved)
+→ image_prompt: "First-person view from a seat at a round table in a
+university defence hall: a warm seminar room seen through the student's own
+eyes, a printed copy of the thesis and a notebook on the table in front, a
+projector screen glowing ahead, about four examiners and the supervisor across
+the table looking towards the viewer and listening. Academic, focused,
+slightly tense but hopeful atmosphere."
+→ cue: "کمی مضطربم اما سربلند، دارم نتیجه‌های پژوهشم رو به داوران ارائه می‌دم."
 
-EXAMPLE B (episode: goal=speak confidently in work meetings;
-situation=weekly team meeting with international colleagues; where=home desk
-via laptop; who=manager, designers, engineers; feeling=calm, confident, proud)
-→ image_prompt: "First-person view down at a calm home-office desk: a laptop
-open to an online team meeting with a grid of small colleague windows, a
-notebook and a coffee cup beside it, soft daylight falling from a window
-just ahead. Seen exactly as the learner sees it, focused, professional and
-calm."
-→ cue: "آرام و مطمئنم، پشت میزم دارم ایده‌هایم را شفاف به انگلیسی می‌گویم."
+EXAMPLE B (episode: goal=graduate with my degree; situation=receiving my
+diploma at the graduation ceremony; where=university auditorium, stage,
+curtains; who=family and friends in the audience; feeling=calm, proud, light)
+→ image_prompt: "First-person view from the stage of a university auditorium
+at a graduation ceremony: a warm hall seen through the student's own eyes, a
+rolled diploma cover held just in front of them, rows of seats and blurred
+figures of family and friends in the background, soft daylight from high
+windows. Seen exactly as the student sees it, proud, celebratory and calm."
+→ cue: "آرام و مطمئنم، مدرک فارغ‌التحصیلی رو توی دستم گرفتم."
 """
 
 
@@ -960,7 +433,8 @@ def generate_reminder_set(db: Session, user: models.User,
 
         prompt = (
             "You create reminder assets for an Episodic Future Thinking study "
-            "with English learners. The participant answered 7 questions about "
+            "with university students in a research-methods course. The "
+            "participant answered 7 questions about "
             "an imagined future moment (below, answers may be in Persian). "
             + gender_rule +
             f"Produce EXACTLY {count} item(s) as a JSON array. Each item: "
@@ -997,7 +471,8 @@ def generate_reminder_set(db: Session, user: models.User,
         base = (
             "Photorealistic photograph, warm natural light, no readable text. "
             "First-person point of view — the camera is the learner's own "
-            "eyes at their hopeful future moment of succeeding at English, so "
+            "eyes at their hopeful future moment of reaching their academic "
+            "goal, so "
             "they are naturally out of frame: "
         )
         pairs = [
@@ -1186,12 +661,28 @@ GENERIC_PROMPTS = [
      "text anywhere."),
 ]
 
-# One cue per image, paired by index. First person and present tense, matching
-# how the personalized cues are written.
+# One cue per image, paired by index. THE CONTROL CONDITION.
+#
+# NEUTRAL TASK MESSAGES. Calm, short, present-tense, about the task in front
+# of the participant and nothing else.
+#
+# Two things they must never be, and both were true of earlier versions:
+#
+#   NOT FUTURE-ORIENTED. "Remember where you are heading" is a diluted form of
+#   the very manipulation being tested — a control participant reading it is
+#   doing weak future self-projection, which shrinks the contrast and makes a
+#   null result uninterpretable.
+#
+#   NOT MOTIVATIONAL. "You're making great progress", "don't waste time" turn
+#   the control into a second treatment, and a shaming register would make it
+#   an actively worse one.
+#
+# Length is held roughly comparable to the personalized cues so the arms
+# differ in content, not in how much text arrives.
 GENERIC_CUES = [
-    "هر روز یه قدم — همین ادامه دادنه که منو می‌رسونه.",
-    "دارم برای چیزی تلاش می‌کنم که برام مهمه.",
-    "آروم و پیوسته — همین کافیه.",
+    "مطالعه را از همین بخش ادامه بده.",
+    "وقتی آماده‌ای، بخش بعدی متن را ادامه بده.",
+    "می‌تونی از همین‌جا به خواندن متن برگردی.",
 ]
 
 GENERIC_PREFIX = "generic_reminder"

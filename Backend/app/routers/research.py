@@ -1,18 +1,26 @@
-"""Event-level research data (work step 11).
+"""Research data export, and the FROZEN reactive-protocol event routes.
 
-One ResearchEvent row PER TRIGGER (tab_switch / idle). Rows are created at
-trigger time — if the participant closes everything mid-session, the data up
-to that moment is already persisted. Return info is patched onto the latest
-open row; each new trigger (and session end) closes out the previous row's
-reading-time window.
+The /event* routes below belong to the superseded design, in which a reminder
+fired *because* the participant disengaged. That made the analysis circular: a
+cue triggered by a disengagement can never predict whether a disengagement
+happens. Cues are now delivered on a fixed clock (app/routers/cues.py), which
+makes them exogenous and the before/after contrast valid.
+
+The routes are KEPT AND ACCEPT CALLS, but no longer write. During the
+transition a participant may still be running an older extension build, and a
+404 there would break their session — a silent no-op does not. Nothing is
+recorded because ResearchEvent rows come from a different protocol and must
+never be mixed with the new tables.
+
+Everything still worth logging goes to CueDelivery and DisengagementEpisode.
 """
 
 from __future__ import annotations
 
+import csv
 import io
 import json
 import time
-import random
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,7 +29,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.config import ADMIN_EXPORT_KEY, NEUTRAL_RATIO, REMINDERS_DIR
+from app.config import ADMIN_EXPORT_KEY, REMINDERS_DIR
 from app.database import models
 from app.database.db_setup import get_db
 from app.services.security import get_current_user
@@ -66,172 +74,54 @@ def _aware(dt: datetime | None) -> datetime | None:
     return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
 
 
-def _active_session_id(db: Session, user_id: int) -> int | None:
-    s = (
-        db.query(models.Session)
-        .filter(models.Session.user_id == user_id,
-                models.Session.ended_at.is_(None))
-        .order_by(models.Session.started_at.desc())
-        .first()
-    )
-    return s.id if s else None
+# ──────────────────────────────────────────────────────────────────────
+# FROZEN ROUTES — accepted, never written
+# ──────────────────────────────────────────────────────────────────────
+# Each returns ok:false with a reason so a stale client degrades quietly
+# instead of erroring, and so anything still calling them is visible in the
+# logs rather than silently assumed to be gone.
+
+def _frozen(route: str, user_id: int) -> dict:
+    print(f"ℹ️ {route} called by participant {user_id} — reactive protocol is "
+          f"frozen, nothing written. This client is running an old build; "
+          f"scheduled cues are served from /api/study/cue/*.")
+    return {"ok": False, "detail": "reactive protocol frozen", "route": route}
 
 
-def _latest_open_event(db: Session, user_id: int) -> models.ResearchEvent | None:
-    """The most recent trigger that hasn't been marked returned yet."""
-    return (
-        db.query(models.ResearchEvent)
-        .filter(models.ResearchEvent.participant_id == user_id,
-                models.ResearchEvent.returned_to_reading == 0)
-        .order_by(models.ResearchEvent.event_timestamp.desc())
-        .first()
-    )
-
-
-def _close_previous_window(db: Session, user_id: int, now: datetime) -> None:
-    """A new trigger arrived: the previous returned event's reading window
-    ends now → fill reading_time_after_return + repeated_disengagement."""
-    prev = (
-        db.query(models.ResearchEvent)
-        .filter(models.ResearchEvent.participant_id == user_id,
-                models.ResearchEvent.returned_to_reading == 1,
-                models.ResearchEvent.reading_time_after_return.is_(None))
-        .order_by(models.ResearchEvent.event_timestamp.desc())
-        .first()
-    )
-    if prev is not None and prev.return_timestamp is not None:
-        delta = (_aware(now) - _aware(prev.return_timestamp)).total_seconds()
-        prev.reading_time_after_return = max(0.0, delta)
-        prev.repeated_disengagement_after_return = 1
-
-
-@router.post("/event", status_code=status.HTTP_201_CREATED)
+@router.post("/event", status_code=status.HTTP_200_OK)
 def create_event(
-    data: dict,
-    db: Session = Depends(get_db),
+    data: dict | None = None,
     current_user: models.User = Depends(get_current_user),
 ):
-    """
-    Creates one trigger row. Body:
-      { "event_type": "tab_switch" | "idle",
-        "reminder_shown": bool (optional — in-app overlays know immediately) }
-    """
-    event_type = (data.get("event_type") or "").strip()
-    if event_type not in ("tab_switch", "idle"):
-        raise HTTPException(status_code=422, detail="event_type must be tab_switch or idle")
-
-    now = _utcnow()
-    _close_previous_window(db, current_user.id, now)
-
-    event = models.ResearchEvent(
-        participant_id=current_user.id,
-        session_id=_active_session_id(db, current_user.id),
-        event_type=event_type,
-        event_timestamp=now,
-        condition_assigned=pick_condition(current_user),
-        reminder_shown_timestamp=now if data.get("reminder_shown") else None,
-    )
-    db.add(event)
-    db.commit()
-    db.refresh(event)
-    return {"ok": True, "event_id": event.id,
-            "condition": event.condition_assigned}
+    """FROZEN. Disengagements now go to POST /api/study/disengagement/start."""
+    return _frozen("/event", current_user.id)
 
 
 @router.post("/event/reminder-shown", status_code=status.HTTP_200_OK)
 def mark_reminder_shown(
     data: dict | None = None,
-    db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    """Called (by the extension) when its overlay is actually displayed —
-    stamps reminder_shown_timestamp on the latest open trigger.
-
-    Body: {"condition": "personalized" | "neutral"} — which arm the client
-    believes it displayed.
-
-    The participant's ARM decides what gets recorded, not this report. The
-    server withholds the other arm's images entirely, so the client cannot
-    show anything else; a disagreement therefore means a stale extension or a
-    bug, and recording the client's version would quietly move a participant
-    between arms in the data. It is logged loudly instead.
-
-    (An earlier revision let the client win. That was right while the design
-    randomised per trigger and the client did the rolling — it is wrong now
-    that the arm is fixed per participant and enforced server-side.)
-    """
-    event = _latest_open_event(db, current_user.id)
-    if event is None:
-        return {"ok": False, "detail": "no open trigger"}
-
-    expected = pick_condition(current_user)
-    shown = (data or {}).get("condition")
-    if shown is not None and shown != expected:
-        print(f"⚠️ reminder-shown: client reported {shown!r} but participant "
-              f"{current_user.id} is in arm {expected!r} — recording the arm. "
-              f"A stale extension can cause this; the arms are enforced "
-              f"server-side, so it should not happen otherwise.")
-    event.condition_assigned = expected
-
-    if event.reminder_shown_timestamp is None:
-        event.reminder_shown_timestamp = _utcnow()
-    db.commit()
-    return {"ok": True, "event_id": event.id,
-            "condition": event.condition_assigned}
+    """FROZEN. Delivery is now stamped by POST /api/study/cue/{id}/shown."""
+    return _frozen("/event/reminder-shown", current_user.id)
 
 
 @router.post("/event/return", status_code=status.HTTP_200_OK)
 def mark_return(
     data: dict | None = None,
-    db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    """
-    The participant is back at the reading. Patches the latest open trigger:
-      { "dismissed": bool (tapped the overlay away),
-        "clicked_return": bool (used the overlay's return button) }
-    Latency is computed server-side.
-    """
-    event = _latest_open_event(db, current_user.id)
-    if event is None:
-        return {"ok": False, "detail": "no open trigger"}
-
-    now = _utcnow()
-    event.returned_to_reading = 1
-    event.return_timestamp = now
-    event.return_latency_seconds = max(
-        0.0, (_aware(now) - _aware(event.event_timestamp)).total_seconds())
-    if (data or {}).get("dismissed"):
-        event.dismissed = 1
-    if (data or {}).get("clicked_return"):
-        event.clicked_return = 1
-    db.commit()
-    return {"ok": True, "event_id": event.id,
-            "latency": event.return_latency_seconds}
+    """FROZEN. Returns now close an episode via /api/study/disengagement/end,
+    which is also where return latency is computed."""
+    return _frozen("/event/return", current_user.id)
 
 
 @router.post("/session-closed", status_code=status.HTTP_200_OK)
 def session_closed(
-    db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    """Session ended: close the last returned event's reading window with
-    repeated_disengagement = false (no further trigger followed)."""
-    now = _utcnow()
-    prev = (
-        db.query(models.ResearchEvent)
-        .filter(models.ResearchEvent.participant_id == current_user.id,
-                models.ResearchEvent.returned_to_reading == 1,
-                models.ResearchEvent.reading_time_after_return.is_(None))
-        .order_by(models.ResearchEvent.event_timestamp.desc())
-        .first()
-    )
-    if prev is not None and prev.return_timestamp is not None:
-        prev.reading_time_after_return = max(
-            0.0, (_aware(now) - _aware(prev.return_timestamp)).total_seconds())
-        prev.repeated_disengagement_after_return = 0
-        db.commit()
-    return {"ok": True}
+    """FROZEN. Superseded by POST /api/study/session/end-reading."""
+    return _frozen("/session-closed", current_user.id)
 
 
 # ─────────────────────────────
@@ -275,7 +165,11 @@ def _dataset(db: Session) -> dict:
         "participant_profiles": rows(models.ParticipantProfile),
         "eft_episodes": rows(models.EFTEpisode),
         "sessions": rows(models.Session),
+        # Frozen — the reactive protocol's rows. Exported for the record,
+        # never to be pooled with cue_deliveries / disengagement_episodes.
         "research_events": rows(models.ResearchEvent),
+        "cue_deliveries": rows(models.CueDelivery),
+        "disengagement_episodes": rows(models.DisengagementEpisode),
         "study_feedback": rows(models.StudyFeedback),
         "event_logs": rows(models.EventLog),
         "reminder_assets": rows(models.ReminderAsset),
@@ -398,6 +292,123 @@ def netcheck(host: str = "image-proxy-worker.gnbellosc.workers.dev"):
         out["verdict"] = ("Cannot reach the CDN at all on either family — the "
                           "host itself is blocked or unreachable from here.")
     return out
+
+
+@router.get("/export/measures.csv",
+            dependencies=[Depends(_require_export_key)])
+def export_measures_csv(db: Session = Depends(get_db)):
+    """Long-format questionnaire export, one row per answered item.
+
+    Long rather than wide on purpose: the battery differs by condition and
+    changes between versions, so a wide table would be mostly empty columns
+    whose meaning depends on which arm the row belongs to.
+
+    `measure_status` and `battery_version` travel on every row so published
+    instruments, study-specific HCI items and open-ended prompts can never be
+    silently pooled in an analysis — that separation is the one thing the
+    write-up cannot recover if it is lost here.
+    """
+    rows = (
+        db.query(models.MeasureResponse, models.User)
+        .join(models.User, models.User.id == models.MeasureResponse.user_id)
+        .order_by(models.MeasureResponse.user_id,
+                  models.MeasureResponse.phase,
+                  models.MeasureResponse.id)
+        .all()
+    )
+
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow([
+        "participant_id", "participant_code", "condition",
+        "battery_version", "phase", "timepoint",
+        "instrument", "item_code", "measure_status", "validated_status",
+        "source",
+        "response_value", "response_text",
+        "entered_hours", "entered_minutes", "normalized_total_minutes",
+        "scale_min", "scale_max", "reverse_scored",
+        "answered_at",
+    ])
+    for r, u in rows:
+        is_duration = r.entered_hours is not None or r.entered_minutes is not None
+        w.writerow([
+            u.id, u.participant_code, u.study_group or "",
+            r.battery_version or "", r.phase if r.phase is not None else "",
+            r.timepoint,
+            r.instrument, r.item_code, r.measure_status or "",
+            int(bool(r.validated)),
+            r.source or "",
+            r.value if r.value is not None else "",
+            (r.text_value or "").replace("\n", " ").strip(),
+            r.entered_hours if r.entered_hours is not None else "",
+            r.entered_minutes if r.entered_minutes is not None else "",
+            # Only meaningful for duration items; blank elsewhere so a reader
+            # never mistakes a Likert value for a number of minutes.
+            r.value if is_duration else "",
+            r.scale_min if r.scale_min is not None else "",
+            r.scale_max if r.scale_max is not None else "",
+            int(bool(r.reverse)),
+            r.created_at.isoformat() if r.created_at else "",
+        ])
+
+    buf.seek(0)
+    stamp = _utcnow().strftime("%Y%m%d-%H%M%S")
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition":
+                 f'attachment; filename="moirai-measures-{stamp}.csv"'},
+    )
+
+
+@router.get("/export/cues.csv", dependencies=[Depends(_require_export_key)])
+def export_cues_csv(db: Session = Depends(get_db)):
+    """One row per scheduled cue slot, delivered or not.
+
+    Column names are deliberately DESCRIPTIVE rather than interpretive:
+    `return_latency_ms` is the time between an eligible cue event and an
+    observed return to the study tab. It is not "motivation", "re-engagement"
+    or "motivational recovery" — those are interpretations the analysis may
+    argue for, and naming a column after one presumes the finding.
+    """
+    rows = (
+        db.query(models.CueDelivery, models.User)
+        .join(models.User, models.User.id == models.CueDelivery.participant_id)
+        .order_by(models.CueDelivery.participant_id, models.CueDelivery.slot)
+        .all()
+    )
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow([
+        "participant_id", "participant_code", "condition",
+        "session_id", "slot", "scheduled_at", "delivered_at",
+        "delivery_offset_ms", "state_at_delivery", "form", "cue_condition",
+        "dismissed", "clicked_return",
+        "return_latency_ms", "post_cue_focus_seconds",
+        "not_delivered_reason",
+    ])
+    for c, u in rows:
+        w.writerow([
+            u.id, u.participant_code, u.study_group or "",
+            c.session_id, c.slot,
+            c.scheduled_at.isoformat() if c.scheduled_at else "",
+            c.delivered_at.isoformat() if c.delivered_at else "",
+            c.delivery_offset_ms if c.delivery_offset_ms is not None else "",
+            c.state_at_delivery or "", c.form or "", c.condition or "",
+            int(bool(c.dismissed)), int(bool(c.clicked_return)),
+            c.return_latency_ms if c.return_latency_ms is not None else "",
+            c.post_cue_focus_seconds
+            if c.post_cue_focus_seconds is not None else "",
+            c.not_delivered_reason or "",
+        ])
+    buf.seek(0)
+    stamp = _utcnow().strftime("%Y%m%d-%H%M%S")
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition":
+                 f'attachment; filename="moirai-cues-{stamp}.csv"'},
+    )
 
 
 @router.get("/export", dependencies=[Depends(_require_export_key)])

@@ -44,7 +44,27 @@ class MeasuresPage extends StatefulWidget {
 
 class _MeasuresPageState extends State<MeasuresPage> {
   List<Map<String, dynamic>> _items = [];
-  final Map<String, int> _answers = {};
+
+  /// The participant's own future goal, shown above the items when the
+  /// server says this timepoint needs it. The instrumentality wording refers
+  /// to "this future goal", so on those pages it must be on screen or the
+  /// items ask about something the participant cannot see.
+  String? _futureGoal;
+  String _goalPrompt = '';
+
+  /// Codes the participant may leave blank (the open-ended prompts).
+  Set<String> _optional = {};
+
+  /// int for rated items, String for open-ended ones. Typed as dynamic
+  /// because the battery mixes both and the server stores them in separate
+  /// columns; forcing one type here is what made an open-ended prompt render
+  /// as a rating scale.
+  final Map<String, dynamic> _answers = {};
+
+  /// One controller per open-ended item, created lazily and disposed with the
+  /// page.
+  final Map<String, TextEditingController> _textControllers = {};
+
   bool _loading = true;
   bool _saving = false;
 
@@ -55,7 +75,8 @@ class _MeasuresPageState extends State<MeasuresPage> {
   }
 
   Future<void> _load() async {
-    final items = await ApiService.getMeasureItems(widget.timepoint);
+    final payload = await ApiService.getMeasurePayload(widget.timepoint);
+    final items = payload?['items'] as List<Map<String, dynamic>>?;
     if (!mounted) return;
     if (items == null || items.isEmpty) {
       // Nothing due for this arm — move on without showing anything.
@@ -64,6 +85,11 @@ class _MeasuresPageState extends State<MeasuresPage> {
     }
     setState(() {
       _items = items;
+      _futureGoal = (payload?['future_goal'] as String?)?.trim();
+      _goalPrompt = (payload?['goal_prompt_fa'] as String?) ?? '';
+      _optional = ((payload?['optional_codes'] as List?) ?? const [])
+          .map((e) => e.toString())
+          .toSet();
       _loading = false;
     });
   }
@@ -75,9 +101,24 @@ class _MeasuresPageState extends State<MeasuresPage> {
     );
   }
 
+  /// Answered means "has a value"; for an open-ended item that means
+  /// non-empty text, not merely a touched field.
+  bool _isAnswered(Map<String, dynamic> item) {
+    if (_optional.contains(item['code'])) return true;
+    final v = _answers[item['code']];
+    if (v == null) return false;
+    if (v is String) return v.trim().isNotEmpty;
+    if (v is Map) {
+      // A duration needs at least one field filled. An untouched pair of
+      // empty boxes is not an answer of zero.
+      return v['hours'] != null || v['minutes'] != null;
+    }
+    return true;
+  }
+
   Future<void> _submit() async {
     final missing = _items.firstWhere(
-      (i) => !_answers.containsKey(i['code']),
+      (i) => !_isAnswered(i),
       orElse: () => {},
     );
     if (missing.isNotEmpty) {
@@ -100,6 +141,14 @@ class _MeasuresPageState extends State<MeasuresPage> {
       );
     }
     _goNext();
+  }
+
+  @override
+  void dispose() {
+    for (final c in _textControllers.values) {
+      c.dispose();
+    }
+    super.dispose();
   }
 
   @override
@@ -142,12 +191,56 @@ class _MeasuresPageState extends State<MeasuresPage> {
                   color: AppColors.navy),
             ),
             const SizedBox(height: 20),
+            if (_futureGoal != null && _futureGoal!.isNotEmpty) ...[
+              _buildGoalBanner(),
+              const SizedBox(height: 24),
+            ],
             for (final item in _items) ...[
               _buildItem(item),
               const SizedBox(height: 26),
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  /// The participant's own goal, in their own words, above the items that
+  /// refer to it.
+  ///
+  /// Shown identically at pre and post. Half the design is that the two
+  /// administrations ask about the SAME future — if the goal were only
+  /// visible the first time, the post items would be answered against
+  /// whatever the participant happened to remember.
+  Widget _buildGoalBanner() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      decoration: BoxDecoration(
+        color: AppColors.purple.withOpacity(0.07),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.purple.withOpacity(0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (_goalPrompt.isNotEmpty)
+            Text(
+              _goalPrompt,
+              style: TextStyle(
+                  fontSize: 13.5,
+                  height: 1.8,
+                  color: AppColors.navy.withOpacity(0.75)),
+            ),
+          const SizedBox(height: 8),
+          Text(
+            _futureGoal!,
+            style: const TextStyle(
+                fontSize: 16,
+                height: 2.0,
+                fontWeight: FontWeight.w600,
+                color: AppColors.navy),
+          ),
+        ],
       ),
     );
   }
@@ -165,6 +258,16 @@ class _MeasuresPageState extends State<MeasuresPage> {
           style: const TextStyle(
               fontSize: 14.5, height: 1.9, color: AppColors.navy),
         ),
+        if ((item['helper_fa'] as String? ?? '').isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(
+            item['helper_fa'] as String,
+            style: TextStyle(
+                fontSize: 12.5,
+                height: 1.8,
+                color: AppColors.navy.withOpacity(0.6)),
+          ),
+        ],
         const SizedBox(height: 10),
         if (kind == 'circles')
           CirclesScale(
@@ -175,10 +278,116 @@ class _MeasuresPageState extends State<MeasuresPage> {
           )
         else if (kind == 'choice')
           _choices(code, (scale['options_fa'] as List).cast<String>())
+        else if (kind == 'text')
+          _freeText(code, multiline: scale['multiline'] == true)
+        else if (kind == 'duration')
+          _duration(code, scale)
         else
           _likert(code, scale),
       ],
     );
+  }
+
+  /// Open-ended items — the goal-elicitation prompt asks the participant to
+  /// DESCRIBE something, and there is no rating that could answer it.
+  Widget _freeText(String code, {bool multiline = false}) {
+    final controller = _textControllers.putIfAbsent(
+      code,
+      () => TextEditingController(text: _answers[code] as String? ?? ''),
+    );
+    return TextField(
+      controller: controller,
+      minLines: multiline ? 3 : 1,
+      maxLines: multiline ? 6 : 1,
+      textInputAction:
+          multiline ? TextInputAction.newline : TextInputAction.done,
+      style: const TextStyle(fontSize: 14.5, height: 1.7),
+      decoration: InputDecoration(
+        hintText: 'جوابت رو اینجا بنویس…',
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: AppColors.purple.withOpacity(0.35)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: AppColors.purple.withOpacity(0.25)),
+        ),
+      ),
+      // No setState per keystroke: the map is read on submit, and rebuilding
+      // the whole battery on every character makes typing stutter.
+      onChanged: (v) => _answers[code] = v,
+    );
+  }
+
+  /// Hours + minutes. Deliberately NOT a Likert: this is the only
+  /// quantitative outcome in the battery, and collapsing a duration into a
+  /// rating would throw away everything that makes it one.
+  ///
+  /// The map value is {'hours': int, 'minutes': int}; the server stores both
+  /// the raw entry and the normalised total.
+  Widget _duration(String code, Map<String, dynamic> scale) {
+    final current = (_answers[code] as Map?)?.cast<String, dynamic>() ??
+        <String, dynamic>{};
+    final maxHours = (scale['max_hours'] as int?) ?? 168;
+
+    void update(String field, String raw) {
+      final n = int.tryParse(raw.trim());
+      final next = Map<String, dynamic>.from(current);
+      if (n == null) {
+        next.remove(field);
+      } else {
+        // Clamped rather than rejected: a participant who types 75 minutes
+        // means something, and refusing the keystroke mid-entry is worse
+        // than accepting the nearest valid value. The server validates
+        // again regardless.
+        next[field] = field == 'hours'
+            ? n.clamp(0, maxHours)
+            : n.clamp(0, 59);
+      }
+      setState(() => _answers[code] = next);
+    }
+
+    Widget box(String field, String label) => Expanded(
+          child: Row(
+            children: [
+              SizedBox(
+                width: 74,
+                child: TextField(
+                  controller: _textControllers.putIfAbsent(
+                    '$code.$field',
+                    () => TextEditingController(
+                        text: current[field]?.toString() ?? ''),
+                  ),
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 16),
+                  decoration: InputDecoration(
+                    hintText: '۰',
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding:
+                        const EdgeInsets.symmetric(vertical: 12),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide:
+                          BorderSide(color: AppColors.purple.withOpacity(0.3)),
+                    ),
+                  ),
+                  onChanged: (v) => update(field, v),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(label,
+                  style: const TextStyle(
+                      fontSize: 14, color: AppColors.navy)),
+            ],
+          ),
+        );
+
+    return Row(children: [box('hours', 'ساعت'), box('minutes', 'دقیقه')]);
   }
 
   Widget _likert(String code, Map<String, dynamic> scale) {

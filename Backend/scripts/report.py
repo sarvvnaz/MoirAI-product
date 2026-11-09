@@ -59,11 +59,123 @@ def bar(pct: float, color: str) -> str:
             f'background:{color}"></div></div>')
 
 
+def delivery_audit(events: list, diseng: list, n_users: int) -> str:
+    """Did the protocol actually run? Check this BEFORE looking at any result.
+
+    Three ways the study can fail while every chart still renders:
+
+      · dosage — someone got one cue instead of two, so their row breaks the
+        equal-exposure assumption the whole design rests on;
+      · state split — if nearly every cue lands in one state, one of the two
+        primary measures has almost no data, and no amount of analysis
+        recovers it;
+      · lateness — "the cue fired at minute 10" is a claim, and
+        delivery_offset_ms is the only thing that checks it.
+    """
+    per_user: dict = {}
+    for ev in events:
+        per_user.setdefault(ev.get("participant_id"), []).append(ev)
+
+    delivered = [e_ for e_ in events if e_.get("delivered_at")]
+    states = Counter(e_.get("state_at_delivery") or "(none)"
+                     for e_ in delivered)
+    reasons = Counter(e_.get("not_delivered_reason") for e_ in events
+                      if e_.get("not_delivered_reason"))
+
+    full_dose = sum(1 for rows in per_user.values()
+                    if len([r for r in rows if r.get("delivered_at")]) == 2)
+    under = len(per_user) - full_dose
+
+    offsets = [e_.get("delivery_offset_ms") or 0 for e_ in delivered]
+    worst = max(offsets) if offsets else 0
+    median = sorted(offsets)[len(offsets) // 2] if offsets else 0
+
+    # The two primary measures, and how many rows each actually has.
+    n_latency = len([e_ for e_ in delivered
+                     if e_.get("return_latency_ms") is not None])
+    n_retention = len([e_ for e_ in delivered
+                       if e_.get("post_cue_focus_seconds") is not None])
+
+    rows = ""
+    for label, n, colour in (
+            ("active (corner card)", states.get("active", 0), "#7c6cf0"),
+            ("idle (in-app overlay)", states.get("idle", 0), "#f0b429"),
+            ("off tab (modal)", states.get("off_tab", 0), "#38c9a5"),
+            ("off browser (modal)", states.get("off_browser", 0), "#4a9ede")):
+        pct = 100 * n / (len(delivered) or 1)
+        rows += (f'<tr><td>{label}</td><td class="num">{n}</td>'
+                 f'<td class="barcell">{bar(pct, colour)}</td>'
+                 f'<td class="num">{pct:.0f}%</td></tr>')
+
+    warns = ""
+    if under:
+        warns += (f'<p class="warn">⚠️ {under} of {len(per_user)} participants '
+                  f'did NOT receive both cues. Equal dosage is the claim the '
+                  f'design rests on — see the reasons below before analysing '
+                  f'anything.</p>')
+    if delivered and min(n_latency, n_retention) == 0:
+        warns += ('<p class="warn">⚠️ One of the two primary measures has NO '
+                  'rows. Return latency needs cues delivered off-tab and '
+                  'retention needs cues delivered while active; if every cue '
+                  'lands in one state, only one question can be answered.</p>')
+    if worst > 60_000:
+        warns += (f'<p class="warn">⚠️ Worst delivery was {worst/1000:.0f}s '
+                  f'late. The MV3 alarm floor explains up to ~30s; beyond '
+                  f'that the schedule is not being honoured.</p>')
+
+    reason_rows = "".join(
+        f'<tr><td>{e(k)}</td><td class="num">{v}</td></tr>'
+        for k, v in reasons.most_common()) or (
+        '<tr><td class="muted">none — every slot delivered</td>'
+        '<td class="num">0</td></tr>')
+
+    closed = [x for x in diseng if x.get("ended_at")]
+    open_eps = len(diseng) - len(closed)
+    diseng_warn = ""
+    if open_eps:
+        diseng_warn = (f'<p class="warn">⚠️ {open_eps} disengagement '
+                       f'episode(s) never closed, so their duration is NULL '
+                       f'and they drop silently out of time-on-task.</p>')
+
+    return f"""
+<h2>Delivery audit <span class="muted" style="font-size:13px">
+ (check this before reading any result)</span></h2>
+{warns}
+<div class="stats">
+ <div class="stat"><b>{full_dose}/{len(per_user)}</b><span>got both cues</span></div>
+ <div class="stat"><b>{n_latency}</b><span>return-latency rows</span></div>
+ <div class="stat"><b>{n_retention}</b><span>retention rows</span></div>
+ <div class="stat"><b>{median/1000:.1f}s</b><span>median lateness</span></div>
+ <div class="stat"><b>{worst/1000:.1f}s</b><span>worst lateness</span></div>
+</div>
+
+<h3>State when the cue landed</h3>
+<p class="muted">This split decides how much data each primary measure gets.
+ It cannot be chosen — only observed.</p>
+<table>{rows}</table>
+
+<h3 style="margin-top:22px">Undelivered slots, by reason</h3>
+<p class="muted">grace_expired = the cue was due and delivery failed ·
+ session_ended_before_slot = the participant finished early and is
+ under-dosed · no_asset_available = no stimulus existed for that slot</p>
+<table>{reason_rows}</table>
+
+<h3 style="margin-top:22px">Disengagement episodes</h3>
+{diseng_warn}
+<p class="muted">{len(diseng)} episode(s) · {len(closed)} closed ·
+ {Counter(x.get('episode_type') for x in diseng).most_common()}</p>
+"""
+
+
 def build(d: dict, host: str) -> str:
     users = d.get("users", [])
     episodes = {ep["user_id"]: ep for ep in d.get("eft_episodes", [])}
     profiles = {p["user_id"] for p in d.get("participant_profiles", [])}
-    events = d.get("research_events", [])
+    # The scheduled-cue tables. research_events is FROZEN — it holds rows from
+    # the reactive protocol and must never be pooled with these, so it is not
+    # read here at all.
+    events = d.get("cue_deliveries", [])
+    diseng = d.get("disengagement_episodes", [])
     sessions = d.get("sessions", [])
 
     assets_by_user: dict = {}
@@ -74,8 +186,8 @@ def build(d: dict, host: str) -> str:
     for ev in events:
         events_by_user.setdefault(ev.get("participant_id"), []).append(ev)
 
-    shown = [ev for ev in events if ev.get("reminder_shown_timestamp")]
-    conds = Counter(ev.get("condition_assigned") or "(unset)" for ev in shown)
+    shown = [ev for ev in events if ev.get("delivered_at")]
+    conds = Counter(ev.get("condition") or "(unset)" for ev in shown)
     n_shown = len(shown) or 1
 
     # ── condition split: the number the whole comparison rests on ──
@@ -92,9 +204,9 @@ def build(d: dict, host: str) -> str:
         warn = ('<p class="warn">No reminder has been shown yet — there is '
                 'nothing to compare.</p>')
     elif len([c for c in conds if c in ("personalized", "neutral")]) < 2:
-        warn = ('<p class="warn">⚠️ Only one condition appears. Either '
-                'NEUTRAL_RATIO is 0 or the generic images are missing — as it '
-                'stands there is no control arm.</p>')
+        warn = ('<p class="warn">⚠️ Only one condition appears. Either every '
+                'participant so far landed in one arm, or the generic images '
+                'are missing — as it stands there is no control arm.</p>')
 
     # ── participants ──
     cards = ""
@@ -103,8 +215,8 @@ def build(d: dict, host: str) -> str:
         ep = episodes.get(uid)
         assets = assets_by_user.get(uid, [])
         uevents = events_by_user.get(uid, [])
-        ushown = [x for x in uevents if x.get("reminder_shown_timestamp")]
-        ucond = Counter(x.get("condition_assigned") or "?" for x in ushown)
+        ushown = [x for x in uevents if x.get("delivered_at")]
+        ucond = Counter(x.get("condition") or "?" for x in ushown)
 
         chips = "".join(
             f'<span class="chip {"ok" if cond else "miss"}">{label}</span>'
@@ -252,8 +364,10 @@ def build(d: dict, host: str) -> str:
  (what participants actually saw)</span></h2>
 {warn}
 <table>{cond_rows}</table>
-<p class="muted">{len(events)} triggers logged · {len(shown)} reminders shown
+<p class="muted">{len(events)} slots scheduled · {len(shown)} cues delivered
  · {len(sessions)} sessions</p>
+
+{delivery_audit(events, diseng, len(users))}
 
 <h2>Participants ({len(users)})</h2>
 {cards or '<p class="muted">No participants yet.</p>'}
@@ -275,8 +389,11 @@ def main() -> int:
     out = Path(a.out).resolve()
     out.write_text(build(d, a.host), encoding="utf-8")
     print(f"✅ {out}")
+    cd = d.get("cue_deliveries", [])
     print(f"   {len(d.get('users', []))} participants, "
-          f"{len(d.get('research_events', []))} triggers")
+          f"{len([c for c in cd if c.get('delivered_at')])}/{len(cd)} "
+          f"scheduled cues delivered, "
+          f"{len(d.get('disengagement_episodes', []))} disengagement episodes")
     if not a.no_open and sys.platform == "darwin":
         subprocess.run(["open", str(out)], check=False)
     return 0

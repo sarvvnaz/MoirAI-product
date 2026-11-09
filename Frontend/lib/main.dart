@@ -8,13 +8,14 @@ import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 // Remove HomePage import; we no longer use the old home screen for EFT
 import 'package:path/path.dart' as p;
-import 'screens/consent_page.dart';
+// import 'screens/consent_page.dart';
 import 'screens/intro_page.dart';
 import 'screens/login_page.dart';
 import 'screens/signup_page.dart';
-import 'screens/start_page.dart';
+// The product opens directly on its introduction; the old welcome page is retained.
+// import 'screens/start_page.dart';
 // Debug-only imports (see debug routes below).
-import 'screens/baseline_profile_page.dart';
+// import 'screens/baseline_profile_page.dart';
 import 'screens/debug_eft_entry_page.dart';
 import 'screens/eft_chat_page.dart';
 import 'screens/final_feedback_page.dart';
@@ -143,9 +144,10 @@ class moiraiApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'MoirAI Demo',
+      title: 'مویرای',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
+        fontFamily: 'Vazirmatn',
         useMaterial3: true,
         scaffoldBackgroundColor: AppColors.lavender,
         colorScheme: ColorScheme.fromSeed(
@@ -184,9 +186,10 @@ class moiraiApp extends StatelessWidget {
       // No initialRoute: on web, Flutter reads the route from the URL
       // (e.g. /#/debug-study), falling back to '/'.
       routes: {
-        '/': (_) => const StartPage(),
+        '/': (_) => const IntroPage(),
         '/intro': (_) => const IntroPage(),
-        '/consent': (_) => const ConsentPage(),
+        // Legacy privacy URL continues directly to account creation.
+        '/consent': (_) => const SignUpPage(),
         '/login': (_) => const LoginPage(),
         '/signup': (_) => const SignUpPage(),
 
@@ -197,7 +200,8 @@ class moiraiApp extends StatelessWidget {
         // session, bypassing the reminder-image gate on the prepare and
         // extension-setup screens.
         if (kDebugMode) ...{
-          '/debug-questionnaire': (_) => const BaselineProfilePage(userId: 0),
+          // Research questionnaire preview paused.
+          // '/debug-questionnaire': (_) => const BaselineProfilePage(userId: 0),
           '/debug-chat': (_) => const EFTChatPage(userId: 0),
           '/debug-prepare': (_) => const PreparePage(userId: 0),
           '/debug-study': (_) => const StudySessionPage(userId: 0),

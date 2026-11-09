@@ -5,8 +5,22 @@ import '../theme/app_colors.dart';
 import '../widgets/study_scaffold.dart';
 import 'done_page.dart';
 
-/// Last feedback step before finishing the study: overall experience,
-/// motivation, usefulness of reminders — with dragging bars (sliders).
+/// DEPRECATED — not in the measurement_v3_task_goal flow. Kept only so
+/// historical builds and old data stay readable.
+///
+/// Replaced by the `feedback` timepoint (three open-ended items served by
+/// MeasuresPage). Three reasons it had to go, beyond duplication:
+///
+///   · «یادآورهای شخصی چقدر برایت مفید بودند؟» asks BOTH conditions about
+///     "personal" reminders. The control arm's reminders are not personal,
+///     and the word tells every participant that personalization is what is
+///     being studied.
+///   · The motivation and ease-of-use sliders are ad-hoc measures of
+///     constructs v3 deliberately dropped (no motivation battery, no SUS).
+///   · Its answers went to logEvent(), not the measures table, so they
+///     carried no provenance and never reached the CSV export.
+///
+/// Do not route participants here.
 class FinalFeedbackPage extends StatefulWidget {
   final int userId;
   const FinalFeedbackPage({super.key, required this.userId});

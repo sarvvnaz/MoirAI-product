@@ -4,7 +4,7 @@ import '../services/api_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/study_scaffold.dart';
 import 'manual_eft_entry_page.dart';
-import 'measures_page.dart';
+// import 'measures_page.dart';
 import 'prepare_page.dart';
 
 /// EFT chat step (work step 12): a guided conversation that walks the
@@ -81,8 +81,11 @@ class _EFTChatPageState extends State<EFTChatPage> {
     });
   }
 
-  Future<void> _sendToServer(
-      {required String message, bool reset = false, int? importance}) async {
+  Future<void> _sendToServer({
+    required String message,
+    bool reset = false,
+    int? importance,
+  }) async {
     if (!mounted) return;
     setState(() => _loading = true);
     try {
@@ -97,9 +100,8 @@ class _EFTChatPageState extends State<EFTChatPage> {
         return;
       }
       final bot = (res['bot'] as String?) ?? '';
-      final collected = (res['collected'] as List?)
-              ?.map((e) => e == true)
-              .toList() ??
+      final collected =
+          (res['collected'] as List?)?.map((e) => e == true).toList() ??
           _collected;
       final range = (res['importance_range'] as List?)
           ?.map((e) => (e as num).toInt())
@@ -148,7 +150,10 @@ class _EFTChatPageState extends State<EFTChatPage> {
       final suggestions = await ApiService.eftInspire();
       if (!mounted) return;
       if (suggestions.isEmpty) {
-        _addMessage('bot', 'الان نتونستم نمونه بیارم — با جمله‌ی خودت شروع کن، هرچقدر کوتاه.');
+        _addMessage(
+          'bot',
+          'الان نتونستم نمونه بیارم — با جمله‌ی خودت شروع کن، هرچقدر کوتاه.',
+        );
         return;
       }
       await showModalBottomSheet<void>(
@@ -167,9 +172,10 @@ class _EFTChatPageState extends State<EFTChatPage> {
                 'یکی رو انتخاب کن و به دلخواه تغییرش بده',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.navy.withOpacity(0.85)),
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.navy.withOpacity(0.85),
+                ),
               ),
               const SizedBox(height: 14),
               for (final s in suggestions)
@@ -187,16 +193,21 @@ class _EFTChatPageState extends State<EFTChatPage> {
                     child: Container(
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 12),
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
                       decoration: BoxDecoration(
                         color: AppColors.lavender,
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Text(s,
-                          style: const TextStyle(
-                              fontSize: 14.5,
-                              height: 1.6,
-                              color: AppColors.navy)),
+                      child: Text(
+                        s,
+                        style: const TextStyle(
+                          fontSize: 14.5,
+                          height: 1.6,
+                          color: AppColors.navy,
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -209,6 +220,8 @@ class _EFTChatPageState extends State<EFTChatPage> {
     }
   }
 
+  // Research post-chat questionnaire paused; retained below for reference.
+  /*
   void _goNext() {
     // The EFT manipulation check goes here — straight after the episode is
     // confirmed and before the image appears. Asking later would measure
@@ -223,6 +236,12 @@ class _EFTChatPageState extends State<EFTChatPage> {
           nextPage: () => PreparePage(userId: widget.userId),
         ),
       ),
+    );
+  }
+  */
+  void _goNext() {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => PreparePage(userId: widget.userId)),
     );
   }
 
@@ -284,9 +303,7 @@ class _EFTChatPageState extends State<EFTChatPage> {
   /// ties the present self to the future one, but it is not an imagining task —
   /// making participants type it would cost attention the rest of the chat needs.
   Widget _buildImportanceRow() {
-    final values = [
-      for (int v = _importanceMin; v <= _importanceMax; v++) v,
-    ];
+    final values = [for (int v = _importanceMin; v <= _importanceMax; v++) v];
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
       color: Colors.white,
@@ -309,7 +326,8 @@ class _EFTChatPageState extends State<EFTChatPage> {
                         color: AppColors.lavender,
                         shape: BoxShape.circle,
                         border: Border.all(
-                            color: AppColors.purple.withOpacity(0.45)),
+                          color: AppColors.purple.withOpacity(0.45),
+                        ),
                       ),
                       child: Text(
                         '$v',
@@ -330,14 +348,20 @@ class _EFTChatPageState extends State<EFTChatPage> {
             children: [
               // In RTL the first child renders on the RIGHT, which is where
               // the «1» chip sits — so the low-end label comes first.
-              Text('$_importanceMin = خیلی کم',
-                  style: TextStyle(
-                      fontSize: 11.5,
-                      color: AppColors.navy.withOpacity(0.6))),
-              Text('$_importanceMax = خیلی زیاد',
-                  style: TextStyle(
-                      fontSize: 11.5,
-                      color: AppColors.navy.withOpacity(0.6))),
+              Text(
+                '$_importanceMin = خیلی کم',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: AppColors.navy.withOpacity(0.6),
+                ),
+              ),
+              Text(
+                '$_importanceMax = خیلی زیاد',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: AppColors.navy.withOpacity(0.6),
+                ),
+              ),
             ],
           ),
         ],
@@ -358,13 +382,13 @@ class _EFTChatPageState extends State<EFTChatPage> {
             'قدم‌ها',
             textAlign: TextAlign.center,
             style: TextStyle(
-                color: Colors.white,
-                fontSize: 13,
-                fontWeight: FontWeight.bold),
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           const SizedBox(height: 14),
-          for (int i = 0; i < _questionLabels.length; i++)
-            _railItem(i),
+          for (int i = 0; i < _questionLabels.length; i++) _railItem(i),
         ],
       ),
     );
@@ -373,8 +397,9 @@ class _EFTChatPageState extends State<EFTChatPage> {
   Widget _railItem(int i) {
     final done = _collected[i];
     final current = !done && i == _activeIndex && !_canStart;
-    final Color dotColor =
-        done ? AppColors.mint : (current ? Colors.white : Colors.white24);
+    final Color dotColor = done
+        ? AppColors.mint
+        : (current ? Colors.white : Colors.white24);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
@@ -390,26 +415,29 @@ class _EFTChatPageState extends State<EFTChatPage> {
               boxShadow: current
                   ? [
                       BoxShadow(
-                          color: Colors.white.withOpacity(0.5),
-                          blurRadius: 8,
-                          spreadRadius: 1)
+                        color: Colors.white.withOpacity(0.5),
+                        blurRadius: 8,
+                        spreadRadius: 1,
+                      ),
                     ]
                   : null,
             ),
             child: done
                 ? const Icon(Icons.check, size: 14, color: AppColors.navy)
                 : (current
-                    ? const Center(
-                        child: SizedBox(
-                          width: 7,
-                          height: 7,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                                color: Colors.white, shape: BoxShape.circle),
+                      ? const Center(
+                          child: SizedBox(
+                            width: 7,
+                            height: 7,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
                           ),
-                        ),
-                      )
-                    : null),
+                        )
+                      : null),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -420,8 +448,7 @@ class _EFTChatPageState extends State<EFTChatPage> {
                     ? AppColors.mint
                     : (current ? Colors.white : Colors.white54),
                 fontSize: 13.5,
-                fontWeight:
-                    current ? FontWeight.bold : FontWeight.normal,
+                fontWeight: current ? FontWeight.bold : FontWeight.normal,
               ),
             ),
           ),
@@ -447,14 +474,14 @@ class _EFTChatPageState extends State<EFTChatPage> {
                     _collected[i]
                         ? Icons.check_circle
                         : (i == _activeIndex && !_canStart
-                            ? Icons.radio_button_checked
-                            : Icons.radio_button_unchecked),
+                              ? Icons.radio_button_checked
+                              : Icons.radio_button_unchecked),
                     size: 18,
                     color: _collected[i]
                         ? AppColors.mint
                         : (i == _activeIndex && !_canStart
-                            ? Colors.white
-                            : Colors.white24),
+                              ? Colors.white
+                              : Colors.white24),
                   ),
               ],
             ),
@@ -468,12 +495,13 @@ class _EFTChatPageState extends State<EFTChatPage> {
               final msg = _messages[index];
               final isBot = msg['sender'] == 'bot';
               return Align(
-                alignment:
-                    isBot ? Alignment.centerRight : Alignment.centerLeft,
+                alignment: isBot ? Alignment.centerRight : Alignment.centerLeft,
                 child: Container(
                   margin: const EdgeInsets.symmetric(vertical: 5),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
                   constraints: const BoxConstraints(maxWidth: 460),
                   decoration: BoxDecoration(
                     color: isBot ? Colors.white : AppColors.purple,
@@ -518,9 +546,10 @@ class _EFTChatPageState extends State<EFTChatPage> {
                           child: CircularProgressIndicator(strokeWidth: 2.5),
                         )
                       : const Text('💡', style: TextStyle(fontSize: 16)),
-                  label: const Text('',
-                      style: TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.w600)),
+                  label: const Text(
+                    '',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
                   onPressed: (_loading || _inspiring) ? null : _handleInspire,
                 ),
                 Expanded(
@@ -537,14 +566,15 @@ class _EFTChatPageState extends State<EFTChatPage> {
                         borderSide: BorderSide.none,
                       ),
                       contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 10),
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
                     ),
                   ),
                 ),
                 const SizedBox(width: 8),
                 IconButton(
-                  icon:
-                      const Icon(Icons.send_rounded, color: AppColors.purple),
+                  icon: const Icon(Icons.send_rounded, color: AppColors.purple),
                   onPressed: _loading ? null : _handleSend,
                 ),
               ],
@@ -558,7 +588,9 @@ class _EFTChatPageState extends State<EFTChatPage> {
               'وقتی آماده بودی، دکمه‌ی «ادامه» را بزن 🌱',
               textAlign: TextAlign.center,
               style: TextStyle(
-                  fontSize: 14, color: AppColors.navy.withOpacity(0.7)),
+                fontSize: 14,
+                color: AppColors.navy.withOpacity(0.7),
+              ),
             ),
           ),
         // Escape hatch — disappears for good once the episode is submitted
@@ -573,7 +605,9 @@ class _EFTChatPageState extends State<EFTChatPage> {
                 onPressed: _loading ? null : _openManualEntry,
                 style: TextButton.styleFrom(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 4),
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   minimumSize: Size.zero,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),

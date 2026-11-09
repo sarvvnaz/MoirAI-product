@@ -1,13 +1,23 @@
 // lib/widgets/idle_detector.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
-import '../services/api_service.dart';
+
+/// Where a behaviour event goes. Injectable so the idle/focus logic can be
+/// tested without a server: these events are outcome measures, so being able
+/// to assert on them matters.
+typedef BehaviorLogSink = void Function(
+    int userId, String eventType, Map<String, dynamic> details);
 
 class IdleDetector extends StatefulWidget {
-  /// TODO(step-11): flip to true when the research event schema is
-  /// implemented. While false, behavior events (idle/focus) are detected and
-  /// printed to the console but NOT persisted to the database.
-  static const bool persistBehaviorLogs = false;
+  /// Behaviour events (idle/focus) are persisted, not just printed.
+  ///
+  /// This must stay true for any run that produces data. Idle and focus
+  /// events are now OUTCOME measures — how often a participant disengages
+  /// and how long they hold attention after a cue — rather than incidental
+  /// logging. With this false the export still looks healthy, because
+  /// research rows are written elsewhere, while the fine-grained behaviour
+  /// log is silently empty.
+  static const bool persistBehaviorLogs = true;
 
   final int userId;
   final Widget child;
@@ -26,6 +36,22 @@ class IdleDetector extends StatefulWidget {
   /// idle events will be silently deferred and handled when focus returns.
   final VoidCallback? onIdleWhileSuppressed;
 
+  /// Where behaviour events are sent.
+  ///
+  /// Required, and deliberately so. These events are outcome data, and the
+  /// previous failure mode was exactly that they went nowhere while the rest
+  /// of the export looked healthy. Making the sink impossible to omit turns
+  /// that into a compile error. Keeping it injected also means this widget
+  /// does not depend on the API layer, so the idle logic is testable off-web.
+  final BehaviorLogSink logSink;
+
+  /// Overrides the wall clock. Defaults to [DateTime.now].
+  ///
+  /// The idle check compares elapsed real time against [idleThreshold], so a
+  /// test that only advances Flutter's timer queue would never see an idle
+  /// event — the guard against stale timers would swallow it.
+  final DateTime Function()? nowFn;
+
   const IdleDetector({
     super.key,
     required this.userId,
@@ -35,6 +61,8 @@ class IdleDetector extends StatefulWidget {
     this.onFocusReturn,
     this.onFocusLost,
     this.onIdleWhileSuppressed,
+    required this.logSink,
+    this.nowFn,
   });
 
   @override
@@ -44,14 +72,15 @@ class IdleDetector extends StatefulWidget {
 class _IdleDetectorState extends State<IdleDetector>
     with WidgetsBindingObserver {
   /// Central gate for behavior-event logging. Detection always prints to the
-  /// console; persistence only happens once `persistBehaviorLogs` is enabled.
+  /// console; persistence is on unless deliberately disabled for debugging.
   void _log(String eventType, Map<String, dynamic> details) {
     debugPrint('🔍 [detected] $eventType $details');
     if (IdleDetector.persistBehaviorLogs) {
-      // TODO(step-11): persist through the research event schema.
-      ApiService.logEvent(widget.userId, eventType, details);
+      widget.logSink(widget.userId, eventType, details);
     }
   }
+
+  DateTime _now() => (widget.nowFn ?? DateTime.now)();
 
   Timer? _idleTimer;
   bool _isIdle = false;
@@ -66,7 +95,7 @@ class _IdleDetectorState extends State<IdleDetector>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _lastActivityAt = DateTime.now();
+    _lastActivityAt = _now();
     _startTimer();
   }
 
@@ -109,7 +138,7 @@ class _IdleDetectorState extends State<IdleDetector>
 
         _deferNudge = true;
         _deferReason = 'app_background_or_hidden';
-        _deferAt = DateTime.now();
+        _deferAt = _now();
 
         _log('idle_suppressed',
             _baseDetails(extra: {'reason': 'app_background_or_hidden'}));
@@ -159,12 +188,12 @@ class _IdleDetectorState extends State<IdleDetector>
   }
 
   void _markActivity() {
-    _lastActivityAt = DateTime.now();
+    _lastActivityAt = _now();
     _resetTimer();
   }
 
   Future<void> _onIdleTimerFired() async {
-    final now = DateTime.now();
+    final now = _now();
     final silentFor = now.difference(_lastActivityAt);
 
     // Guard against stale timer
@@ -186,7 +215,7 @@ class _IdleDetectorState extends State<IdleDetector>
     if (!canShow) {
       _deferNudge = true;
       _deferReason = 'not_visible_or_inactive';
-      _deferAt = DateTime.now();
+      _deferAt = _now();
 
       _log('idle_suppressed', _baseDetails(extra: {
         'reason': 'not_visible_or_inactive',
@@ -236,7 +265,7 @@ class _IdleDetectorState extends State<IdleDetector>
   Map<String, dynamic> _baseDetails({Map<String, dynamic>? extra}) {
     return {
       'route': ModalRoute.of(context)?.settings.name,
-      'ts': DateTime.now().toIso8601String(),
+      'ts': _now().toIso8601String(),
       ...?extra,
     };
   }

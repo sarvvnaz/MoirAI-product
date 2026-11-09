@@ -4,6 +4,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from app import measure_items
 from app.database import models
 from app.database.db_setup import get_db
 from app.services.eft_chat_service_v2 import (
@@ -222,6 +223,9 @@ def eft_chat(
     if _locked_by(state) == "manual":
         return _manual_locked_result(state)
 
+    if not reset:
+        _seed_goal_from_future_goal(db, current_user)
+
     service = EFTChatServiceV2(db, current_user.id)
     result = service.process_message(message, reset=reset, importance=importance)
 
@@ -251,11 +255,172 @@ def eft_chat(
                     user_id=current_user.id,
                     episode_json=json.dumps(episode, ensure_ascii=False),
                 ))
+                # MIRROR the importance rating into the measurement table.
+                #
+                # The chatbot already asks it at the right moment — straight
+                # after the goal, before the episodic detail questions — so
+                # nothing about the chat needs changing. But the control arm
+                # answers the SAME item through the questionnaire layer, and
+                # if the EFT arm's copy lived only inside episode_json the two
+                # arms' answers would sit in different places, in different
+                # shapes, and could not be compared without special-casing the
+                # export.
+                #
+                # Written with the item bank's own provenance so the mirrored
+                # row is indistinguishable from a directly-answered one.
+                _mirror_goal_importance(
+                    db, current_user, fields.get(IMPORTANCE_KEY))
         # Chat won the race → the manual form is closed from now on.
         _mark_locked(db, current_user.id, "chat")
 
     db.commit()
     return result
+
+
+def _mirror_goal_importance(db: Session, user, value) -> None:
+    """Record the chatbot's importance rating as the shared goal_importance
+    item, so both conditions' answers land in one comparable place.
+
+    Idempotent: re-running the episode save must not create a second row.
+    """
+    if value is None:
+        return
+    # goal_importance is NOT part of the active questionnaire battery in this
+    # version — the chatbot asks it, nothing else does. So its metadata is
+    # spelled out here rather than looked up: relying on the battery would
+    # make this silently no-op the moment the item left it, and the rating
+    # would vanish from the export with nothing to show it had ever been
+    # collected.
+    item = measure_items.item_by_code("goal_importance") or {
+        "instrument": "goal_importance",
+        "phase": 3,
+        "validated": False,
+        "measure_status": measure_items.PUBLISHED_ADAPTED,
+        "battery_version": measure_items.BATTERY_VERSION,
+        "source": ("Goal-importance construct adapted from Asayama et al. "
+                   "(2024); wording is the EFT chatbot's own. Collected "
+                   "inside the conversation, not in the battery."),
+        "scale_min": 1,
+        "scale_max": 6,
+    }
+
+    row = (
+        db.query(models.MeasureResponse)
+        .filter(models.MeasureResponse.user_id == user.id,
+                models.MeasureResponse.item_code == "goal_importance",
+                models.MeasureResponse.timepoint == "goal_importance")
+        .first()
+    )
+    if row is None:
+        row = models.MeasureResponse(
+            user_id=user.id, item_code="goal_importance",
+            timepoint="goal_importance",
+            # instrument is NOT NULL, so it has to be set before the flush
+            # below rather than with the rest of the fields.
+            instrument=item["instrument"])
+        db.add(row)
+        # Flushed immediately: the session runs with autoflush off, so a
+        # second call in the same transaction would not see this pending row
+        # and would add a duplicate — which the unique constraint then turns
+        # into an IntegrityError that fails the whole episode save.
+        db.flush()
+
+    row.instrument = item["instrument"]
+    row.phase = item["phase"]
+    row.value = int(value)
+    row.validated = bool(item["validated"])
+    row.measure_status = item["measure_status"]
+    row.battery_version = item["battery_version"]
+    row.source = item["source"]
+    row.scale_min = item["scale_min"]
+    row.scale_max = item["scale_max"]
+
+
+def _seed_goal_from_future_goal(db: Session, user) -> None:
+    """Pre-fill the chatbot's `goal` step with the goal already collected.
+
+    The participant writes their future goal on its own screen, before the
+    pre-questionnaire, because the instrumentality items ask about "this
+    future goal" and need a referent. Asking for it AGAIN as the chatbot's
+    first question would produce two goals per participant with nothing
+    saying which one the generated future is about.
+
+    Seeding is done here, in the router, rather than inside the chat service:
+    the service's turn logic, probing, extraction and step progression are all
+    untouched. It simply starts at step 1 with `goal` already present — from
+    its point of view a participant who answered the first question. The
+    importance chip row still fires next, because `_needs_importance` keys off
+    a goal existing without a rating.
+
+    Only ever runs when no chat state exists yet, so an in-progress or
+    finished conversation is never overwritten.
+    """
+    existing = (
+        db.query(models.EFTChatState)
+        .filter(models.EFTChatState.user_id == user.id)
+        .first()
+    )
+    if existing is not None:
+        return
+
+    row = (
+        db.query(models.MeasureResponse)
+        .filter(models.MeasureResponse.user_id == user.id,
+                models.MeasureResponse.item_code == "future_goal")
+        .first()
+    )
+    goal = (row.text_value or "").strip() if row else ""
+    if not goal:
+        # No goal on record — let the chatbot ask its own first question, as
+        # it always did. Better than starting a conversation about nothing.
+        return
+
+    db.add(models.EFTChatState(
+        user_id=user.id,
+        current_step=1,          # step 0 (`goal`) is already answered
+        fields_json=json.dumps({"goal": goal}, ensure_ascii=False),
+    ))
+    db.flush()
+
+
+@router.get("/generated-future", status_code=status.HTTP_200_OK)
+def generated_future(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """The participant's OWN generated future — image and text.
+
+    Deliberately NOT served from /api/extension/reminder-set. That endpoint
+    withholds personalized assets from anyone in the control arm, which is
+    correct for the two-arm reminder study it was written for: sending an
+    asset and trusting the client not to show it would put that study's
+    validity in the extension's hands.
+
+    This version has no control arm — every participant builds a future and
+    is shown it — but signup still assigns `study_group`, so roughly half of
+    them would reach the visualization screen and be shown the SHARED GENERIC
+    image instead of their own. Nothing would error; the demo would just
+    quietly display the wrong picture to half the room.
+
+    So this reads the participant's own assets directly, and reminder-set is
+    left exactly as it was for the flow that still needs it.
+    """
+    asset = (
+        db.query(models.ReminderAsset)
+        .filter(models.ReminderAsset.user_id == current_user.id)
+        .filter(models.ReminderAsset.is_generic == False)  # noqa: E712
+        .order_by(models.ReminderAsset.asset_index)
+        .first()
+    )
+    if asset is None:
+        return {"ok": True, "ready": False, "image_url": None, "cue": None}
+
+    return {
+        "ok": True,
+        "ready": True,
+        "image_url": asset.image_url,
+        "cue": asset.cue,
+    }
 
 
 @router.post("/inspire", status_code=status.HTTP_200_OK)

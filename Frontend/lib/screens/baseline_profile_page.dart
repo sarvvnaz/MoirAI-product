@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import '../data/study_steps.dart';
 import '../services/api_service.dart';
-import 'measures_page.dart';
 import '../services/flow_router.dart';
 import '../theme/app_colors.dart';
 import '../widgets/study_scaffold.dart';
-import 'eft_chat_page.dart';
 
 /// Research questionnaire step. Explanations are shown above the form,
 /// every field is mandatory, and age is a dropdown from 18 to 25.
@@ -62,24 +60,19 @@ class _BaselineProfilePageState extends State<BaselineProfilePage> {
       // Where next depends on the arm, and the ARM IS THE SERVER'S ANSWER —
       // asking it (rather than deciding here) means the route a participant
       // takes can never disagree with the group recorded against their data.
-      // Control participants do no EFT chat, so they go straight on to the
-      // extension setup that every session needs.
-      final next = await FlowRouter.resolveNextScreen(widget.userId);
-      if (!mounted) return;
-      // Baseline measures come between the profile and the study proper:
-      // future-self continuity and study intention must be recorded BEFORE
-      // any intervention, or there is nothing to compare the closing
-      // measurement against.
+      //
+      // This used to push a hardcoded 'baseline' questionnaire before
+      // continuing. That timepoint no longer exists: the v3 battery replaced
+      // it with per-condition goal steps (the chatbot's own goal question for
+      // the EFT arm, a multipart form for the control arm), each of which the
+      // stage machine serves in its own right. Naming a dead timepoint here
+      // made /api/measures/items return 422, which the page could not
+      // recover from — so a new participant looped on the questionnaire
+      // forever.
+      //
+      // Nothing is hardcoded now. The server decides what comes next.
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => MeasuresPage(
-            userId: widget.userId,
-            timepoint: 'baseline',
-            title: 'چند سوال کوتاه قبل از شروع',
-            step: StudyStep.questionnaire,
-            nextPage: () => next,
-          ),
-        ),
+        MaterialPageRoute(builder: (_) => FlowGate(userId: widget.userId)),
       );
     } catch (e) {
       if (!mounted) return;

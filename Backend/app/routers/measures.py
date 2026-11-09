@@ -46,17 +46,51 @@ def get_items(
         .all()
     }
 
+    # The participant's own future goal, shown above the items when the
+    # timepoint calls for it. The instrumentality wording refers to "this
+    # future goal", so on those pages the goal has to be visible or the items
+    # are asking about something the participant cannot see.
+    goal_text = None
+    if measure_items.shows_goal(timepoint):
+        row = (
+            db.query(models.MeasureResponse)
+            .filter(models.MeasureResponse.user_id == current_user.id,
+                    models.MeasureResponse.item_code == "future_goal")
+            .first()
+        )
+        goal_text = (row.text_value or "").strip() if row else None
+
     return {
         "ok": True,
         "timepoint": timepoint,
         "study_group": current_user.study_group or "eft",
+        "show_goal": measure_items.shows_goal(timepoint),
+        "goal_prompt_fa": measure_items.GOAL_PROMPT_FA,
+        "future_goal": goal_text,
+        "optional_codes": sorted(measure_items.OPTIONAL_CODES),
         "already_answered": sorted(answered),
         "items": [
             {
                 "code": i["code"],
                 "instrument": i["instrument"],
+                "phase": i["phase"],
+                "group_visibility": i["group_visibility"],
                 "text_fa": i["text_fa"],
+                "helper_fa": i["helper_fa"],
+                "text_en": i["text_en"],
+                "response_type": i["response_type"],
                 "scale": i["scale"],
+                "scale_min": i["scale_min"],
+                "scale_max": i["scale_max"],
+                "scale_labels": i["scale_labels"],
+                # Sent to the client for completeness of the served contract,
+                # never to be rendered: telling a participant which items are
+                # "validated" would be a demand characteristic.
+                "validated": i["validated"],
+                "measure_status": i["measure_status"],
+                "battery_version": i["battery_version"],
+                "source": i["source"],
+                "notes": i["notes"],
             }
             for i in items
         ],
@@ -103,7 +137,31 @@ def save_responses(
             continue
 
         value, text_value = None, None
-        if isinstance(raw, str):
+        hours = minutes = None
+
+        if item["response_type"] == "duration":
+            # {"hours": h, "minutes": m}. Stored BOTH as entered and as a
+            # normalised total, and never coerced into a rating — the total
+            # is what analysis uses, the raw pair is what the participant
+            # actually said.
+            if not isinstance(raw, dict):
+                ignored.append(code)
+                continue
+            try:
+                hours = int(raw.get("hours") or 0)
+                minutes = int(raw.get("minutes") or 0)
+            except (TypeError, ValueError):
+                ignored.append(code)
+                continue
+            if hours < 0 or minutes < 0 or minutes > 59:
+                ignored.append(code)
+                continue
+            max_h = item["scale"].get("max_hours", 168)
+            if hours > max_h:
+                ignored.append(code)
+                continue
+            value = hours * 60 + minutes
+        elif isinstance(raw, str):
             text_value = raw.strip() or None
         elif raw is not None:
             try:
@@ -126,9 +184,21 @@ def save_responses(
 
         scale = item["scale"]
         row.instrument = item["instrument"]
+        row.phase = item.get("phase")
         row.value = value
         row.text_value = text_value
         row.reverse = bool(item.get("reverse"))
+        # Provenance is stamped from the SERVER's item bank, never from the
+        # client. A row has to stay interpretable on its own: which category
+        # an answer belonged to is the distinction the analysis rests on, and
+        # it must not depend on what the item bank happens to say later.
+        row.validated = bool(item.get("validated"))
+        row.measure_status = item.get("measure_status")
+        row.battery_version = item.get("battery_version")
+        row.source = item.get("source")
+        row.scale_min = scale.get("min")
+        row.entered_hours = hours
+        row.entered_minutes = minutes
         # Choice items carry no explicit max, so derive it from the option
         # count — otherwise a stored 3 gives no clue whether the scale ran to
         # 5 or to 7, and the row stops being self-interpreting.

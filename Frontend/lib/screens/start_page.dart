@@ -29,14 +29,14 @@ class StartPage extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             const Text(
-              'یک تجربه‌ی کوتاه و متفاوت برای دیدن آینده‌ای که براش تلاش می‌کنی',
+              'چند مرحله کوتاه برای تمرکز روی کاری که برات مهمه',
               textAlign: TextAlign.center,
               style: TextStyle(
                   fontSize: 16, height: 1.8, color: AppColors.navy),
             ),
             const SizedBox(height: 40),
             StudyPrimaryButton(
-              label: 'برای اولین بار شروع می‌کنم',
+              label: 'شروع',
               onPressed: () => Navigator.pushNamed(context, '/intro'),
             ),
             const SizedBox(height: 14),
@@ -51,7 +51,7 @@ class StartPage extends StatelessWidget {
                   ),
                 ),
                 child: const Text(
-                  'قبلاً شرکت کرده‌ام (ورود با شناسه)',
+                  'ورود به حساب',
                   style: TextStyle(fontSize: 15, color: AppColors.purple),
                 ),
               ),

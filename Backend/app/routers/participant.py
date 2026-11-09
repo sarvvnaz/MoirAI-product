@@ -111,30 +111,89 @@ def get_state(
         )
         .count()
     )
+    # The v3 open-ended feedback block. Completion is read from the measures
+    # table, NOT from the legacy StudyFeedback row: that row was written by
+    # the old slider page, which is no longer in the flow. Leaving the gate
+    # pointed at it would mean the stage never advances past "feedback" and
+    # the participant loops on the last page forever.
     has_feedback = (
-        db.query(models.StudyFeedback)
-        .filter(models.StudyFeedback.user_id == current_user.id)
+        db.query(models.MeasureResponse)
+        .filter(models.MeasureResponse.user_id == current_user.id,
+                models.MeasureResponse.timepoint == "feedback")
         .first()
         is not None
     )
 
     group = current_user.study_group or "eft"
-    # The control arm never does the EFT chat, so an episode is not part of
-    # its route. Reusing the same stage machine for both arms — rather than
-    # branching the whole flow — keeps resume behaviour identical and means
-    # only this one condition encodes the difference.
-    needs_episode = group == "eft"
 
-    if not has_profile:
-        stage = "profile"
-    elif needs_episode and not has_episode:
+    def answered(timepoint: str) -> bool:
+        """Has any item at this timepoint been answered?
+
+        Read from stored answers rather than a completion flag, so someone
+        who abandons a page half way is returned to it rather than carried
+        past it.
+        """
+        return (
+            db.query(models.MeasureResponse)
+            .filter(models.MeasureResponse.user_id == current_user.id,
+                    models.MeasureResponse.timepoint == timepoint)
+            .first()
+            is not None
+        )
+
+    # The visualization screen has nothing to save, so its completion is
+    # marked with an activity row rather than a questionnaire answer. Using a
+    # dummy measure item instead would put a non-question into the battery
+    # and into every export.
+    seen_visualization = (
+        db.query(models.UserActivity)
+        .filter(models.UserActivity.user_id == current_user.id,
+                models.UserActivity.activity_type == "visualization_seen")
+        .first()
+        is not None
+    )
+
+    has_assets = (
+        db.query(models.ReminderAsset)
+        .filter(models.ReminderAsset.user_id == current_user.id)
+        .filter(models.ReminderAsset.is_generic == False)  # noqa: E712
+        .first()
+        is not None
+    )
+
+    # ── the single participant path ──
+    #
+    # profile → future_goal → pre → chat → generate → visualize → post → done
+    #
+    # ONE path for everyone. This version has no control arm, so `study_group`
+    # is still recorded (assigned at signup, and old rows depend on it) but no
+    # longer routes anything — a control participant would otherwise be sent
+    # to a chatbot step their arm was built to skip.
+    #
+    # The reading task, scheduled cues and extension steps are not reachable
+    # from here. Their code, routes and tables are untouched and still tested;
+    # they are simply not part of this flow.
+#     if not has_profile:
+#         stage = "profile"
+#     # The goal comes BEFORE the pre-questionnaire: the instrumentality items
+#     # ask about "this future goal", so without it they have no referent.
+#     elif not answered("future_goal"):
+#         stage = "future_goal"
+#     elif not answered("pre"):
+#         stage = "pre"
+    # Product: the chatbot collects the goal; research questionnaires are paused.
+    if not has_episode:
         stage = "eft_chat"
+    # Generation is its own stage so the visualization screen never opens on a
+    # missing image.
+    elif not has_assets:
+        stage = "generate"
+    elif not seen_visualization:
+        stage = "visualize"
+    # elif not answered("post"):
+    #     stage = "post"
     elif completed_sessions == 0:
-        stage = "session1"
-    elif completed_sessions == 1:
-        stage = "session2"
-    elif not has_feedback:
-        stage = "feedback"
+        stage = "reading"
     else:
         stage = "done"
 
@@ -146,3 +205,28 @@ def get_state(
         "completed_sessions": completed_sessions,
         "has_feedback": has_feedback,
     }
+
+
+@router.post("/visualization-seen", status_code=status.HTTP_201_CREATED)
+def mark_visualization_seen(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Record that the participant finished the visualization screen.
+
+    Idempotent: a reload or a double tap must not add a second row, or the
+    activity log stops being a record of what happened.
+    """
+    existing = (
+        db.query(models.UserActivity)
+        .filter(models.UserActivity.user_id == current_user.id,
+                models.UserActivity.activity_type == "visualization_seen")
+        .first()
+    )
+    if existing is None:
+        db.add(models.UserActivity(
+            user_id=current_user.id,
+            activity_type="visualization_seen",
+        ))
+        db.commit()
+    return {"ok": True}

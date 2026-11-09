@@ -5,32 +5,34 @@ enum StudyStep {
   intro, // fun research intro
   consent, // short consent + anonymity
   account, // anonymous account creation (code + password)
-  questionnaire, // baseline profile + baseline measures
+  questionnaire, // profile, future goal, pre-questionnaire
   chat, // EFT chat
-  prepare, // reminder generation + extension setup
-  study, // reading session + quiz
-  finish, // closing measures + final feedback + done
+  prepare, // text + image generation, then the visualization screen
+  study, // reading session + quiz — NOT used in this version
+  finish, // post-questionnaire + done
 }
 
-/// The steps a given arm actually walks through.
+/// The steps a participant actually walks through.
 ///
-/// The control arm never does the EFT chat, so showing it a «گفتگو» box it
-/// will never reach is both confusing and a small leak about the other
-/// condition. Everything else is shared.
+/// `study` is the reading session, which this version of the study does not
+/// use. Its screens, routes and telemetry all still exist and are still
+/// tested — they are simply not on the participant's path, so showing a
+/// «مطالعه» box nobody will ever reach would misrepresent how long the study
+/// is and imply a step that never arrives.
 ///
-/// Defaults to the full list when the arm is unknown — an extra box is a
-/// lesser evil than a progress bar that jumps as the arm loads.
+/// `studyGroup` is accepted and ignored: there is one path for everyone in
+/// this version. The parameter stays so existing callers keep working.
 List<StudyStep> visibleStepsFor(String? studyGroup) {
-  if (studyGroup == 'control') {
-    return StudyStep.values.where((s) => s != StudyStep.chat).toList();
-  }
-  return StudyStep.values;
+  // Research questionnaire step is paused, not deleted.
+  return StudyStep.values
+      .where((s) => s != StudyStep.questionnaire && s != StudyStep.start && s != StudyStep.consent)
+      .toList();
 }
 
 const Map<StudyStep, String> studyStepLabels = {
   StudyStep.start: 'شروع',
   StudyStep.intro: 'آشنایی',
-  StudyStep.consent: 'رضایت',
+  StudyStep.consent: 'حریم خصوصی',
   StudyStep.account: 'حساب',
   StudyStep.questionnaire: 'پرسشنامه',
   StudyStep.chat: 'گفتگو',

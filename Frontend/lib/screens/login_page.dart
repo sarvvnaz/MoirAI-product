@@ -44,7 +44,6 @@ class _LoginPageState extends State<LoginPage> {
         final userId = (body['user']?['id'] as num?)?.toInt();
         if (token != null && userId != null) {
           await ApiService.storeAuth(token, userId);
-          await ApiService.logStoredConsent(userId);
           final next = await FlowRouter.resolveNextScreen(userId);
           if (!mounted) return;
           Navigator.pushReplacement(

@@ -4,7 +4,7 @@ import '../data/study_steps.dart';
 import '../services/api_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/study_scaffold.dart';
-import 'baseline_profile_page.dart';
+import '../services/flow_router.dart';
 
 /// Anonymous account creation. The user picks any unique ID (they can write
 /// something anonymous if they don't want to be recognized) plus a simple
@@ -54,13 +54,11 @@ class _SignUpPageState extends State<SignUpPage> {
 
         if (token != null && userId != null) {
           await ApiService.storeAuth(token, userId);
-          // Log the consent recorded before account creation.
-          await ApiService.logStoredConsent(userId);
           if (!mounted) return;
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (_) => BaselineProfilePage(userId: userId),
+              builder: (_) => FlowGate(userId: userId),
             ),
           );
           return;
@@ -105,7 +103,7 @@ class _SignUpPageState extends State<SignUpPage> {
         children: [
           TextButton(
             onPressed: () => Navigator.pushReplacementNamed(context, '/login'),
-            child: const Text('قبلاً شرکت کرده‌ام؟ ورود',
+            child: const Text('حساب داری؟ وارد شو',
                 style: TextStyle(color: AppColors.purple)),
           ),
           const Spacer(),
@@ -136,7 +134,7 @@ class _SignUpPageState extends State<SignUpPage> {
               ),
               const SizedBox(height: 10),
               const Text(
-                'یک شناسه برای خودت انتخاب کن. اگه دوست داشتی برگردی لازمت میشه.',
+                'برای ذخیره‌ی گفتگو و یادآورت، یک حساب بساز.',
                 style:
                     TextStyle(fontSize: 15, height: 1.9, color: AppColors.navy),
               ),

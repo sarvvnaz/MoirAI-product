@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 // ignore: deprecated_member_use
@@ -13,7 +14,14 @@ import 'study_session_page.dart';
 /// the study session — the extension is needed from the session onward).
 class ExtensionSetupPage extends StatefulWidget {
   final int userId;
-  const ExtensionSetupPage({super.key, required this.userId});
+  final Uint8List? pdfBytes;
+  final String? pdfName;
+  const ExtensionSetupPage({
+    super.key,
+    required this.userId,
+    this.pdfBytes,
+    this.pdfName,
+  });
 
   @override
   State<ExtensionSetupPage> createState() => _ExtensionSetupPageState();
@@ -38,10 +46,14 @@ class _ExtensionSetupPageState extends State<ExtensionSetupPage> {
   void initState() {
     super.initState();
     _autoCheck = Timer.periodic(
-        const Duration(seconds: 4), (_) => _check(silent: true));
+      const Duration(seconds: 4),
+      (_) => _check(silent: true),
+    );
     _checkReminder();
     _reminderPoll = Timer.periodic(
-        const Duration(seconds: 4), (_) => _checkReminder());
+      const Duration(seconds: 4),
+      (_) => _checkReminder(),
+    );
   }
 
   /// Polls attempted before asking the server to generate again.
@@ -107,8 +119,9 @@ class _ExtensionSetupPageState extends State<ExtensionSetupPage> {
   void _download() {
     if (kIsWeb) {
       html.window.open(
-          ApiService.resolveBackendUrl('/static/moirai-extension.zip'),
-          '_blank');
+        ApiService.resolveBackendUrl('/static/moirai-extension.zip'),
+        '_blank',
+      );
     }
   }
 
@@ -121,43 +134,50 @@ class _ExtensionSetupPageState extends State<ExtensionSetupPage> {
       // is what shows the reminder) and it needs an image (a reminder with
       // nothing to show is not an intervention). Missing either produces a
       // session that looks normal in the data and measured nothing.
-      bottomBar: Builder(builder: (_) {
-        final extensionOk = _connected == true;
-        final ready = extensionOk && _reminderReady;
-        final blocker = !extensionOk
-            ? 'برای ادامه، اول افزونه رو نصب و وصل کن 🧩'
-            : (!_reminderReady
-                ? 'تصویر آینده‌ات هنوز آماده نشده — چند لحظه صبر کن 🌱'
-                : null);
-        return Row(
-          children: [
-            if (blocker != null)
-              Expanded(
-                child: Text(
-                  blocker,
-                  style: TextStyle(
-                      fontSize: 13, color: AppColors.navy.withOpacity(0.75)),
-                ),
-              )
-            else
-              const Spacer(),
-            SizedBox(
-              width: 200,
-              child: StudyPrimaryButton(
-                label: 'ادامه به جلسه مطالعه',
-                onPressed: !ready
-                    ? null
-                    : () => Navigator.of(context).pushReplacement(
+      bottomBar: Builder(
+        builder: (_) {
+          final extensionOk = _connected == true;
+          final ready = _reminderReady;
+          final blocker = !extensionOk
+              ? 'می‌تونی بدون افزونه ادامه بدی.'
+              : (!_reminderReady
+                    ? 'تصویر آینده‌ات هنوز آماده نشده — چند لحظه صبر کن 🌱'
+                    : null);
+          return Row(
+            children: [
+              if (blocker != null)
+                Expanded(
+                  child: Text(
+                    blocker,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppColors.navy.withOpacity(0.75),
+                    ),
+                  ),
+                )
+              else
+                const Spacer(),
+              SizedBox(
+                width: 200,
+                child: StudyPrimaryButton(
+                  label: 'باز کردن فایل',
+                  onPressed: !ready
+                      ? null
+                      : () => Navigator.of(context).pushReplacement(
                           MaterialPageRoute(
-                            builder: (_) =>
-                                StudySessionPage(userId: widget.userId),
+                            builder: (_) => StudySessionPage(
+                              userId: widget.userId,
+                              pdfBytes: widget.pdfBytes,
+                              pdfName: widget.pdfName,
+                            ),
                           ),
                         ),
+                ),
               ),
-            ),
-          ],
-        );
-      }),
+            ],
+          );
+        },
+      ),
       child: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(28),
@@ -167,19 +187,23 @@ class _ExtensionSetupPageState extends State<ExtensionSetupPage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const Text(
-                  'یک قدم مونده: افزونه‌ی مرورگر 🧩',
+                  'افزونه‌ی یادآور',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.navy),
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.navy,
+                  ),
                 ),
                 const SizedBox(height: 10),
                 const Text(
-                  'یادآورهای طول مطالعه از راه این افزونه نشون داده می‌شن.',
+                  'یادآوری بیرون از مویرای؛ نصب اختیاری.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                      fontSize: 14.5, height: 1.8, color: AppColors.navy),
+                    fontSize: 14.5,
+                    height: 1.8,
+                    color: AppColors.navy,
+                  ),
                 ),
                 const SizedBox(height: 12),
                 // Sets expectations for the two-condition design WITHOUT
@@ -188,15 +212,13 @@ class _ExtensionSetupPageState extends State<ExtensionSetupPage> {
                 // Knowing a given image is the personalized one would change
                 // how they react to it, and that reaction is the measurement.
                 const Text(
-                  'یادآورها همیشه یکسان نیستن — بعضی وقت‌ها تصویر خودت رو '
-                  'می‌بینی و بعضی وقت‌ها یه تصویر عمومی. این بخشی از طراحی '
-                  'مطالعه‌ست. لازم نیست حدس بزنی کدوم قراره بیاد یا کاری '
-                  'بکنی؛ فقط هر بار همون‌طور که طبیعیه واکنش نشون بده.',
+                  'یادآورهای داخل مویرای به افزونه نیاز ندارن.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                      fontSize: 13.5,
-                      height: 1.9,
-                      color: AppColors.navy),
+                    fontSize: 13.5,
+                    height: 1.9,
+                    color: AppColors.navy,
+                  ),
                 ),
                 const SizedBox(height: 18),
                 Container(
@@ -221,9 +243,10 @@ class _ExtensionSetupPageState extends State<ExtensionSetupPage> {
                         '۴. برگرد اینجا و «بررسی اتصال» رو بزن',
                         textDirection: TextDirection.rtl,
                         style: TextStyle(
-                            fontSize: 13.5,
-                            height: 2.1,
-                            color: AppColors.navy),
+                          fontSize: 13.5,
+                          height: 2.1,
+                          color: AppColors.navy,
+                        ),
                       ),
                       const SizedBox(height: 14),
                       Row(
@@ -232,17 +255,23 @@ class _ExtensionSetupPageState extends State<ExtensionSetupPage> {
                           OutlinedButton.icon(
                             onPressed: _download,
                             style: OutlinedButton.styleFrom(
-                              side:
-                                  const BorderSide(color: AppColors.purple),
+                              side: const BorderSide(color: AppColors.purple),
                               shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10)),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
                             ),
-                            icon: const Icon(Icons.download_rounded,
-                                size: 18, color: AppColors.purple),
-                            label: const Text('دانلود افزونه',
-                                style: TextStyle(
-                                    fontSize: 13.5,
-                                    color: AppColors.purple)),
+                            icon: const Icon(
+                              Icons.download_rounded,
+                              size: 18,
+                              color: AppColors.purple,
+                            ),
+                            label: const Text(
+                              'دانلود افزونه',
+                              style: TextStyle(
+                                fontSize: 13.5,
+                                color: AppColors.purple,
+                              ),
+                            ),
                           ),
                           const SizedBox(width: 10),
                           ElevatedButton.icon(
@@ -252,15 +281,18 @@ class _ExtensionSetupPageState extends State<ExtensionSetupPage> {
                                   ? AppColors.mint
                                   : AppColors.purple,
                               shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10)),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
                             ),
                             icon: _checking
                                 ? const SizedBox(
                                     width: 16,
                                     height: 16,
                                     child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.white))
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
                                 : Icon(
                                     _connected == true
                                         ? Icons.check_rounded
@@ -268,16 +300,16 @@ class _ExtensionSetupPageState extends State<ExtensionSetupPage> {
                                     size: 18,
                                     color: _connected == true
                                         ? AppColors.navy
-                                        : Colors.white),
+                                        : Colors.white,
+                                  ),
                             label: Text(
-                              _connected == true
-                                  ? 'متصل شد ✅'
-                                  : 'بررسی اتصال',
+                              _connected == true ? 'متصل شد ✅' : 'بررسی اتصال',
                               style: TextStyle(
-                                  fontSize: 13.5,
-                                  color: _connected == true
-                                      ? AppColors.navy
-                                      : Colors.white),
+                                fontSize: 13.5,
+                                color: _connected == true
+                                    ? AppColors.navy
+                                    : Colors.white,
+                              ),
                             ),
                           ),
                         ],
@@ -287,7 +319,9 @@ class _ExtensionSetupPageState extends State<ExtensionSetupPage> {
                         const Text(
                           'متصل نشد — مطمئن شو افزونه نصب و فعاله، بعد دوباره امتحان کن.',
                           style: TextStyle(
-                              fontSize: 12.5, color: Colors.redAccent),
+                            fontSize: 12.5,
+                            color: Colors.redAccent,
+                          ),
                         ),
                       ],
                     ],
