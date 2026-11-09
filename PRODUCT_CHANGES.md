@@ -15,3 +15,11 @@ Compared with the initial product repository:
 - Refresh the served Flutter build; omit local credentials, databases, caches, backup archives, and unrelated research documents.
 
 Validation: 14 backend product-flow tests, 3 PDF validation tests, and a release web build. One live image generation succeeded with the locally configured `gpt-image-2`. Existing research-only tests have not all been migrated.
+
+## Bilingual checkpoint
+
+Add a persistent Persian/English switch to the shared header. Translate active product screens, validation messages, reader controls, extension help, and the manual entry fallback. Switch layout direction without clearing forms, PDFs, or navigation. Keep user-written text in its original language.
+
+Pass the selected language to the chatbot and inspiration endpoints, localize the seven questions, review/confirmation, and examples, and save the episode language for generated reminder captions. Existing conversations retain their original messages; new replies follow the selected language. Existing generated captions are preserved.
+
+Validation: 17 backend product-flow tests, including a complete English conversation and switching languages mid-conversation; 5 Flutter language/PDF tests; a release web build. Manually verified both directions and preservation of typed signup text in the browser.

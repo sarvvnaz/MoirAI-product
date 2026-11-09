@@ -1,3 +1,4 @@
+import '../l10n/app_language.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb; // 🔹 added
@@ -183,7 +184,7 @@ class ApiService {
               'Content-Type': 'application/json',
               'Authorization': 'Bearer $token',
             },
-            body: jsonEncode({'answers': answers}),
+            body: jsonEncode({'answers': answers, 'language': AppLanguage.instance.code}),
           )
           .timeout(_timeout);
       if (res.statusCode == 200) return null;
@@ -214,7 +215,7 @@ class ApiService {
             'Content-Type': 'application/json',
             'Authorization': 'Bearer $token',
           },
-          body: jsonEncode(payload),
+          body: jsonEncode({...payload, 'language': AppLanguage.instance.code}),
         )
         .timeout(_timeout);
     if (res.statusCode == 200) {
@@ -237,7 +238,7 @@ class ApiService {
     try {
       final res = await http
           .post(
-            _u('/api/eft/inspire'),
+            _u('/api/eft/inspire').replace(queryParameters: {'language': AppLanguage.instance.code}),
             headers: {'Authorization': 'Bearer $token'},
           )
           .timeout(_timeout);

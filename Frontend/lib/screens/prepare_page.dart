@@ -1,3 +1,4 @@
+import '../l10n/app_language.dart';
 import 'package:flutter/material.dart';
 import '../data/study_steps.dart';
 import '../services/api_service.dart';
@@ -159,7 +160,7 @@ class _PreparePageState extends State<PreparePage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
+        AppText(
           label,
           style: const TextStyle(
             fontSize: 15,
@@ -169,7 +170,7 @@ class _PreparePageState extends State<PreparePage> {
         ),
         Row(
           children: [
-            Text(
+            AppText(
               low,
               style: TextStyle(
                 fontSize: 12,
@@ -188,7 +189,7 @@ class _PreparePageState extends State<PreparePage> {
                 onChanged: onChanged,
               ),
             ),
-            Text(
+            AppText(
               high,
               style: TextStyle(
                 fontSize: 12,
@@ -210,7 +211,7 @@ class _PreparePageState extends State<PreparePage> {
         children: [
           if (_generating)
             Expanded(
-              child: Text(
+              child: AppText(
                 _retryCount == 0
                     ? 'در حال ساختن تصویر آینده‌ات... چند لحظه صبر کن 🌱'
                     : 'هنوز داریم تلاش می‌کنیم... (تلاش ${_retryCount + 1})',
@@ -280,7 +281,7 @@ class _PreparePageState extends State<PreparePage> {
                     ),
                   const SizedBox(width: 14),
                   Expanded(
-                    child: Text(
+                    child: AppText(
                       _generating
                           ? 'در همین لحظه، یادآورهای شخصی تو در حال ساخته شدن هستند... 🎨'
                           : (_generationFailed
@@ -297,7 +298,7 @@ class _PreparePageState extends State<PreparePage> {
               ),
             ),
             const SizedBox(height: 24),
-            const Text(
+            const AppText(
               'گفتگو چطور بود؟',
               style: TextStyle(
                 fontSize: 18,
@@ -306,7 +307,7 @@ class _PreparePageState extends State<PreparePage> {
               ),
             ),
             const SizedBox(height: 6),
-            const Text('اختیاری · ۱ ضعیف، ۵ عالی'),
+            const AppText('اختیاری · ۱ ضعیف، ۵ عالی'),
             const SizedBox(height: 12),
             Wrap(
               spacing: 8,
@@ -314,7 +315,7 @@ class _PreparePageState extends State<PreparePage> {
               children: [
                 for (int rating = 1; rating <= 5; rating++)
                   ChoiceChip(
-                    label: Text('$rating'),
+                    label: AppText('$rating'),
                     selected: _chatExperience == rating,
                     onSelected: _savingFeedback || _feedbackSaved
                         ? null
@@ -326,13 +327,13 @@ class _PreparePageState extends State<PreparePage> {
             ),
             const SizedBox(height: 10),
             Align(
-              alignment: Alignment.centerRight,
+              alignment: AlignmentDirectional.centerStart,
               child: TextButton(
                 onPressed:
                     _chatExperience == null || _savingFeedback || _feedbackSaved
                     ? null
                     : _saveFeedback,
-                child: Text(
+                child: AppText(
                   _feedbackSaved
                       ? 'ثبت شد، ممنون!'
                       : _savingFeedback
@@ -342,14 +343,14 @@ class _PreparePageState extends State<PreparePage> {
               ),
             ),
             if (_feedbackError != null)
-              Text(
+              AppText(
                 _feedbackError!,
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             /* Research feedback questions paused.
             const SizedBox(height: 16),
 
-            const Text(
+            const AppText(
               'تا آماده می‌شوند، بگو تجربه‌ات چطور بود 💭',
               style: TextStyle(
                   fontSize: 18,

@@ -124,11 +124,13 @@ IMPORTANCE_PROMPT = (
 IMPORTANCE_ACK = "ممنون 🌱 حالا بریم سراغ اون لحظه."
 
 
+from app.services.chat_languages import QUESTIONS_EN, LABELS_EN, INTRO_EN, IDEAS_EN
+
 def question_text(qi: int, fields: Dict[str, Any]) -> str:
     # fields kept in the signature so call sites stay unchanged.
-    return QUESTIONS[qi]["text"]
+    return QUESTIONS_EN[qi] if fields.get("_language") == "en" else QUESTIONS[qi]["text"]
 
-CONFIRM_WORDS = ["تایید", "تأیید", "yes", "ok", "باشه", "درسته", "خوبه"]
+CONFIRM_WORDS = ["تایید", "تأیید", "yes", "ok", "confirm", "approve", "باشه", "درسته", "خوبه"]
 EDIT_WORDS = ["ویرایش", "اصلاح", "تغییر", "edit"]
 
 # Short on purpose. The previous version said the right things at a length
@@ -225,9 +227,12 @@ FALLBACK_INSPIRE: Dict[str, List[str]] = {
 
 
 class EFTChatServiceV2:
-    def __init__(self, db: Session, user_id: int):
+    def __init__(self, db: Session, user_id: int, language: Optional[str] = None):
         self.db = db
         self.user_id = user_id
+        existing = db.query(models.EFTChatState).filter_by(user_id=user_id).first()
+        stored_language = (json.loads(existing.fields_json or '{}').get('_language') if existing else None)
+        self.language = 'en' if (language or stored_language) == 'en' else 'fa'
         self._client = openai_client()
 
     # ── state helpers ──────────────────────────────────────────
@@ -271,6 +276,18 @@ class EFTChatServiceV2:
                 needs_user: bool = True, can_start: bool = False,
                 summary: Optional[str] = None,
                 awaiting_importance: bool = False) -> Dict[str, Any]:
+        if self.language == 'en' and any('\u0600' <= ch <= '\u06ff' for ch in bot):
+            if can_start:
+                bot = 'Your scene is saved. Continue to create your reminder.'
+            elif qi < len(QUESTIONS):
+                bot = question_text(qi, {**fields, '_language': 'en'})
+            elif fields.get('_append_key'):
+                bot = 'What would you like to add to ' + fields['_append_key'] + '?'
+            elif fields.get('_editing'):
+                bot = 'Which part would you like to edit? ' + ', '.join(q['key'] for q in QUESTIONS)
+            else:
+                summary = self._review_text(fields)
+                bot = "Here's your scene:\n\n" + summary + "\n\nType confirm to save it, or edit to change something."
         collected = [bool(fields.get(q["key"])) for q in QUESTIONS]
         return {
             "bot": bot,
@@ -315,7 +332,9 @@ class EFTChatServiceV2:
                         importance: Optional[int] = None) -> Dict[str, Any]:
         state = self.reset_state() if reset else self._get_or_create_state()
         fields = self._fields(state)
+        fields["_language"] = self.language
         qi = int(state.current_step)
+        self._save(state, fields, qi)
         msg = (message or "").strip()
 
         # Importance chip tapped.
@@ -331,7 +350,7 @@ class EFTChatServiceV2:
         # First contact / empty ping → fixed intro (+ resume support).
         if not msg:
             if qi == 0 and not fields.get(QUESTIONS[0]["key"]):
-                return self._result(INTRO, fields, 0)
+                return self._result(INTRO_EN if self.language == "en" else INTRO, fields, 0)
             # Resume at the first UNANSWERED question (never a done one).
             resume_qi = next(
                 (i for i, x in enumerate(QUESTIONS)
@@ -434,7 +453,7 @@ class EFTChatServiceV2:
                 'who': 'کسی هم کنارت هست یا تنهایی؟',
                 'feeling': 'توی اون لحظه چه حسی داری؟',
             }
-            reply = probes[q['key']]
+            reply = QUESTIONS_EN[qi] if self.language == 'en' else probes[q['key']]
             history.append({"role": "assistant", "content": reply})
             fields["_history"] = history[-16:]
             self._save(state, fields, qi)
@@ -686,6 +705,11 @@ Return STRICT JSON:
  "extracted_answer": "<cleaned answer in their own words, or null>",
  "next_question": "<your phrasing of the next step, or null>"}"""
 
+        if self.language == 'en':
+            static_rules += "\nLANGUAGE OVERRIDE: Speak only natural, concise conversational English. " \
+                "Use English in reply and next_question. Preserve the user's meaning. " \
+                "All step rules still apply. Persian examples above are style references, not output language."
+
         system = f"""{static_rules}
 
 ── THIS TURN ──
@@ -776,7 +800,7 @@ NEXT STEP TO ASK: {next_hint}"""
             return {"question_index": qi, "suggestions": []}
         return {
             "question_index": qi,
-            "suggestions": list(FALLBACK_INSPIRE.get(QUESTIONS[qi]["key"], [])),
+            "suggestions": list((IDEAS_EN if self.language == "en" else FALLBACK_INSPIRE).get(QUESTIONS[qi]["key"], [])),
         }
 
     # ── final review ───────────────────────────────────────────
@@ -790,6 +814,8 @@ NEXT STEP TO ASK: {next_hint}"""
         return "\n".join(parts)
 
     def _review_text(self, fields) -> str:
+        if self.language == 'en':
+            return '\n'.join(f"{label}: {fields.get(q['key'], '')}" for label, q in zip(LABELS_EN, QUESTIONS))
         """The episode as a first-person, PRESENT-TENSE paragraph.
 
         Present tense is the point, not decoration: narrating the scene as

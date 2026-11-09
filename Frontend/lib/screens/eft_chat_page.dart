@@ -1,3 +1,4 @@
+import '../l10n/app_language.dart';
 import 'package:flutter/material.dart';
 import '../data/study_steps.dart';
 import '../services/api_service.dart';
@@ -119,7 +120,10 @@ class _EFTChatPageState extends State<EFTChatPage> {
       });
       if (bot.trim().isNotEmpty) _addMessage('bot', bot);
     } catch (e) {
-      _addMessage('bot', 'خطایی رخ داد: $e');
+      _addMessage(
+        'bot',
+        tr('مشکلی در ارتباط با سرور رخ داد. دوباره تلاش کن.', context),
+      );
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -168,7 +172,7 @@ class _EFTChatPageState extends State<EFTChatPage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
+              AppText(
                 'یکی رو انتخاب کن و به دلخواه تغییرش بده',
                 textAlign: TextAlign.center,
                 style: TextStyle(
@@ -200,7 +204,7 @@ class _EFTChatPageState extends State<EFTChatPage> {
                         color: AppColors.lavender,
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Text(
+                      child: AppText(
                         s,
                         style: const TextStyle(
                           fontSize: 14.5,
@@ -271,7 +275,7 @@ class _EFTChatPageState extends State<EFTChatPage> {
               child: CircularProgressIndicator(strokeWidth: 2.5),
             ),
           const SizedBox(width: 8),
-          Text(
+          AppText(
             _canStart
                 ? 'تصویر آینده‌ات آماده است ✅'
                 : 'تکمیل‌شده: ${_collected.where((e) => e).length} از ${_questionLabels.length}',
@@ -329,7 +333,7 @@ class _EFTChatPageState extends State<EFTChatPage> {
                           color: AppColors.purple.withOpacity(0.45),
                         ),
                       ),
-                      child: Text(
+                      child: AppText(
                         '$v',
                         style: const TextStyle(
                           fontSize: 16,
@@ -348,14 +352,14 @@ class _EFTChatPageState extends State<EFTChatPage> {
             children: [
               // In RTL the first child renders on the RIGHT, which is where
               // the «1» chip sits — so the low-end label comes first.
-              Text(
+              AppText(
                 '$_importanceMin = خیلی کم',
                 style: TextStyle(
                   fontSize: 11.5,
                   color: AppColors.navy.withOpacity(0.6),
                 ),
               ),
-              Text(
+              AppText(
                 '$_importanceMax = خیلی زیاد',
                 style: TextStyle(
                   fontSize: 11.5,
@@ -378,7 +382,7 @@ class _EFTChatPageState extends State<EFTChatPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
+          const AppText(
             'قدم‌ها',
             textAlign: TextAlign.center,
             style: TextStyle(
@@ -441,7 +445,7 @@ class _EFTChatPageState extends State<EFTChatPage> {
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
+            child: AppText(
               _questionLabels[i],
               style: TextStyle(
                 color: done
@@ -495,7 +499,9 @@ class _EFTChatPageState extends State<EFTChatPage> {
               final msg = _messages[index];
               final isBot = msg['sender'] == 'bot';
               return Align(
-                alignment: isBot ? Alignment.centerRight : Alignment.centerLeft,
+                alignment: isBot
+                    ? AlignmentDirectional.centerStart
+                    : AlignmentDirectional.centerEnd,
                 child: Container(
                   margin: const EdgeInsets.symmetric(vertical: 5),
                   padding: const EdgeInsets.symmetric(
@@ -507,8 +513,9 @@ class _EFTChatPageState extends State<EFTChatPage> {
                     color: isBot ? Colors.white : AppColors.purple,
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: Text(
+                  child: AppText(
                     msg['text'] ?? '',
+                    translate: isBot,
                     style: TextStyle(
                       fontSize: 15,
                       height: 1.8,
@@ -545,8 +552,8 @@ class _EFTChatPageState extends State<EFTChatPage> {
                           height: 16,
                           child: CircularProgressIndicator(strokeWidth: 2.5),
                         )
-                      : const Text('💡', style: TextStyle(fontSize: 16)),
-                  label: const Text(
+                      : const AppText('💡', style: TextStyle(fontSize: 16)),
+                  label: const AppText(
                     '',
                     style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                   ),
@@ -558,7 +565,7 @@ class _EFTChatPageState extends State<EFTChatPage> {
                     onSubmitted: (_) => _handleSend(),
                     textInputAction: TextInputAction.send,
                     decoration: InputDecoration(
-                      hintText: 'پاسخ خود را بنویس...',
+                      hintText: tr('پاسخ خود را بنویس...', context),
                       filled: true,
                       fillColor: AppColors.lavender,
                       border: OutlineInputBorder(
@@ -584,7 +591,7 @@ class _EFTChatPageState extends State<EFTChatPage> {
           Container(
             padding: const EdgeInsets.all(14),
             color: Colors.white,
-            child: Text(
+            child: AppText(
               'وقتی آماده بودی، دکمه‌ی «ادامه» را بزن 🌱',
               textAlign: TextAlign.center,
               style: TextStyle(
@@ -611,7 +618,7 @@ class _EFTChatPageState extends State<EFTChatPage> {
                   minimumSize: Size.zero,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
-                child: Text(
+                child: AppText(
                   'گفتگو کمکت نمی‌کنه؟ پاسخ‌ها رو دستی بنویس ',
                   style: TextStyle(
                     fontSize: 12.5,

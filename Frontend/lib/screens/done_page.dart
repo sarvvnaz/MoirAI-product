@@ -1,3 +1,4 @@
+import '../l10n/app_language.dart';
 import 'package:flutter/material.dart';
 import '../data/study_steps.dart';
 import '../theme/app_colors.dart';
@@ -19,7 +20,7 @@ class DonePage extends StatelessWidget {
             children: const [
               Icon(Icons.check_circle_rounded, color: AppColors.mint, size: 76),
               SizedBox(height: 20),
-              Text(
+              AppText(
                 'برای چیزی که برات مهم بود، وقت گذاشتی 🌱',
                 textAlign: TextAlign.center,
                 style: TextStyle(
@@ -29,7 +30,7 @@ class DonePage extends StatelessWidget {
                 ),
               ),
               SizedBox(height: 12),
-              Text(
+              AppText(
                 'وقت یک استراحت کوتاهه.',
                 textAlign: TextAlign.center,
                 style: TextStyle(

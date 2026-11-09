@@ -1,3 +1,4 @@
+import '../l10n/app_language.dart';
 import 'package:flutter/material.dart';
 import '../data/study_steps.dart';
 import '../services/api_service.dart';
@@ -46,7 +47,7 @@ class StudyScaffold extends StatelessWidget {
     final double boxHeight = StudyShellMetrics.boxHeight(size, wide: wide);
 
     return Directionality(
-      textDirection: TextDirection.rtl,
+      textDirection: AppLanguage.of(context).direction,
       child: Scaffold(
         backgroundColor: AppColors.navy,
         body: SafeArea(
@@ -56,6 +57,16 @@ class StudyScaffold extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   const SizedBox(height: 16),
+                  Padding(padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Align(alignment: AlignmentDirectional.centerEnd,
+                      child: TextButton.icon(
+                        style: TextButton.styleFrom(foregroundColor: AppColors.lavender),
+                        onPressed: AppLanguage.instance.toggle,
+                        icon: const Icon(Icons.language, size: 18),
+                        label: Text(AppLanguage.instance.isEnglish ? 'فارسی' : 'English'),
+                      ),
+                    ),
+                  ),
                   _Stepper(currentStep: currentStep, compact: compact),
                   const SizedBox(height: 20),
                   Container(
@@ -221,7 +232,7 @@ class _StepCircle extends StatelessWidget {
       children: [
         circle,
         const SizedBox(height: 5),
-        Text(
+        AppText(
           label,
           style: TextStyle(
             fontSize: 11,
@@ -270,7 +281,7 @@ class StudyPrimaryButton extends StatelessWidget {
                 child: CircularProgressIndicator(
                     color: Colors.white, strokeWidth: 2.5),
               )
-            : Text(
+            : AppText(
                 label,
                 style: const TextStyle(fontSize: 16, color: Colors.white),
               ),

@@ -1,3 +1,4 @@
+import '../l10n/app_language.dart';
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
@@ -147,7 +148,7 @@ class _ExtensionSetupPageState extends State<ExtensionSetupPage> {
             children: [
               if (blocker != null)
                 Expanded(
-                  child: Text(
+                  child: AppText(
                     blocker,
                     style: TextStyle(
                       fontSize: 13,
@@ -186,7 +187,7 @@ class _ExtensionSetupPageState extends State<ExtensionSetupPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text(
+                const AppText(
                   'افزونه‌ی یادآور',
                   textAlign: TextAlign.center,
                   style: TextStyle(
@@ -196,7 +197,7 @@ class _ExtensionSetupPageState extends State<ExtensionSetupPage> {
                   ),
                 ),
                 const SizedBox(height: 10),
-                const Text(
+                const AppText(
                   'یادآوری بیرون از مویرای؛ نصب اختیاری.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
@@ -211,7 +212,7 @@ class _ExtensionSetupPageState extends State<ExtensionSetupPage> {
                 // which one is "the real one" and not when to expect which.
                 // Knowing a given image is the personalized one would change
                 // how they react to it, and that reaction is the measurement.
-                const Text(
+                const AppText(
                   'یادآورهای داخل مویرای به افزونه نیاز ندارن.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
@@ -236,12 +237,12 @@ class _ExtensionSetupPageState extends State<ExtensionSetupPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      AppText(
                         '۱. دانلود و خارج کردن فایل از حالت فشرده\n'
                         '۲. باز کردن chrome://extensions و روشن کردن Developer mode\n'
                         '۳. زدن Load unpacked و انتخاب پوشه‌ی افزونه\n'
                         '۴. برگرد اینجا و «بررسی اتصال» رو بزن',
-                        textDirection: TextDirection.rtl,
+                        textDirection: AppLanguage.of(context).direction,
                         style: TextStyle(
                           fontSize: 13.5,
                           height: 2.1,
@@ -265,7 +266,7 @@ class _ExtensionSetupPageState extends State<ExtensionSetupPage> {
                               size: 18,
                               color: AppColors.purple,
                             ),
-                            label: const Text(
+                            label: const AppText(
                               'دانلود افزونه',
                               style: TextStyle(
                                 fontSize: 13.5,
@@ -302,7 +303,7 @@ class _ExtensionSetupPageState extends State<ExtensionSetupPage> {
                                         ? AppColors.navy
                                         : Colors.white,
                                   ),
-                            label: Text(
+                            label: AppText(
                               _connected == true ? 'متصل شد ✅' : 'بررسی اتصال',
                               style: TextStyle(
                                 fontSize: 13.5,
@@ -316,7 +317,7 @@ class _ExtensionSetupPageState extends State<ExtensionSetupPage> {
                       ),
                       if (_connected == false) ...[
                         const SizedBox(height: 10),
-                        const Text(
+                        const AppText(
                           'متصل نشد — مطمئن شو افزونه نصب و فعاله، بعد دوباره امتحان کن.',
                           style: TextStyle(
                             fontSize: 12.5,

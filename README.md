@@ -1,12 +1,13 @@
 # MoirAI Product
 
-Persian PDF reading companion based on [MoirAI-reactive](https://github.com/sarvvnaz/MoirAI-reactive). Keeps the original navy, lavender, purple, and mint interface.
+Persian/English PDF reading companion based on [MoirAI-reactive](https://github.com/sarvvnaz/MoirAI-reactive). Keeps the original navy, lavender, purple, and mint interface.
 
 Users create an account, describe a personally meaningful future in a guided conversation, receive an AI-generated reminder, and choose their own PDF to read. The browser extension is optional. Research questionnaires and privacy-screen navigation are paused; their source and historical data remain available.
 
 ## Current experience
 
-- Concise Persian introduction and account creation.
+- Persistent Persian/English switch, translated interface and chatbot, and automatic reading direction.
+- Concise introduction and account creation.
 - Seven conversational steps tied to the user's own long-term goal, with no importance rating or post-chat questionnaire.
 - One optional 1–5 conversation rating while the reminder image generates, persisted as `product_feedback` in `UserActivity`.
 - Image prompts request natural neck-down framing or softly defocused faces, avoiding identifiable facial details and uncanny masking. Generated results still require visual review.

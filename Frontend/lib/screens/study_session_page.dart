@@ -1,3 +1,4 @@
+import '../l10n/app_language.dart';
 import 'dart:async';
 import 'dart:typed_data';
 import 'pdf_upload_page.dart';
@@ -418,14 +419,14 @@ class _StudySessionPageState extends State<StudySessionPage> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) => Directionality(
-        textDirection: TextDirection.rtl,
+        textDirection: AppLanguage.of(context).direction,
         child: AlertDialog(
           backgroundColor: Colors.white,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          title: const Text('زمان این بخش تمام شد ⏱',
+          title: const AppText('زمان این بخش تمام شد ⏱',
               style: TextStyle(color: AppColors.navy, fontSize: 19)),
-          content: const Text(
+          content: const AppText(
             'دمت گرم! زمان این بخش تموم شد. بریم سراغ مرحله‌ی بعد.',
             style:
                 TextStyle(fontSize: 15, height: 1.9, color: AppColors.navy),
@@ -445,7 +446,7 @@ class _StudySessionPageState extends State<StudySessionPage> {
                   ),
                 );
               },
-              child: const Text('ادامه',
+              child: const AppText('ادامه',
                   style: TextStyle(color: Colors.white)),
             ),
           ],
@@ -458,14 +459,14 @@ class _StudySessionPageState extends State<StudySessionPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => Directionality(
-        textDirection: TextDirection.rtl,
+        textDirection: AppLanguage.of(context).direction,
         child: AlertDialog(
           backgroundColor: Colors.white,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          title: const Text('می‌خوای بری؟',
+          title: const AppText('می‌خوای بری؟',
               style: TextStyle(color: AppColors.navy, fontSize: 18)),
-          content: const Text(
+          content: const AppText(
             '',
             style:
                 TextStyle(fontSize: 14.5, height: 1.9, color: AppColors.navy),
@@ -473,7 +474,7 @@ class _StudySessionPageState extends State<StudySessionPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('می‌مونم',
+              child: const AppText('می‌مونم',
                   style: TextStyle(color: AppColors.navy)),
             ),
             ElevatedButton(
@@ -483,7 +484,7 @@ class _StudySessionPageState extends State<StudySessionPage> {
                     borderRadius: BorderRadius.circular(10)),
               ),
               onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('بله، کامل مطالعه کردم',
+              child: const AppText('بله، کامل مطالعه کردم',
                   style: TextStyle(color: Colors.white)),
             ),
           ],
@@ -526,7 +527,7 @@ class _StudySessionPageState extends State<StudySessionPage> {
     if (unanswered.isNotEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('لطفاً قبل از ادامه به همه‌ی سوالات پاسخ بده 🙂')),
+            content: AppText('لطفاً قبل از ادامه به همه‌ی سوالات پاسخ بده 🙂')),
       );
       return;
     }
@@ -620,7 +621,7 @@ class _StudySessionPageState extends State<StudySessionPage> {
           children: [
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 300),
-              child: Text(
+              child: AppText(
                 '$_countdown',
                 key: ValueKey(_countdown),
                 style: const TextStyle(
@@ -631,7 +632,7 @@ class _StudySessionPageState extends State<StudySessionPage> {
               ),
             ),
             const SizedBox(height: 18),
-            const Text(
+            const AppText(
               'یک نفس عمیق بکش... 🌬️',
               style: TextStyle(
                   fontSize: 22,
@@ -639,7 +640,7 @@ class _StudySessionPageState extends State<StudySessionPage> {
                   color: AppColors.navy),
             ),
             const SizedBox(height: 14),
-            const Text(
+            const AppText(
               'با ریتم خودت پیش برو.\n'
               ''
               'هر وقت خواستی، تمامش کن.',
@@ -710,9 +711,9 @@ class _StudySessionPageState extends State<StudySessionPage> {
                 ),
                 if ((_reminderCue ?? '').isNotEmpty) ...[
                   const SizedBox(height: 8),
-                  Text(
+                  AppText(
                     _reminderCue!,
-                    textAlign: TextAlign.right,
+                    textAlign: TextAlign.start,
                     style: const TextStyle(
                         fontSize: 12.5, height: 1.7, color: AppColors.navy),
                   ),
@@ -748,7 +749,7 @@ class _StudySessionPageState extends State<StudySessionPage> {
                 const SizedBox(height: 18),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 32),
-                  child: Text(
+                  child: AppText(
                     _reminderCue!,
                     textAlign: TextAlign.center,
                     style: const TextStyle(
@@ -761,7 +762,7 @@ class _StudySessionPageState extends State<StudySessionPage> {
                 ),
               ],
               const SizedBox(height: 16),
-              Text(
+              AppText(
                 'برای ادامه ضربه بزن',
                 style: TextStyle(
                     fontSize: 13, color: Colors.white.withOpacity(0.6)),
@@ -793,7 +794,7 @@ class _StudySessionPageState extends State<StudySessionPage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 if (widget.pdfBytes != null)
-                  Text(widget.pdfName ?? 'فایل تو', style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.navy))
+                  AppText(widget.pdfName ?? 'فایل تو', style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.navy))
                 else
                   _buildTimeBanner(),
                 const SizedBox(height: 12),
@@ -802,7 +803,7 @@ class _StudySessionPageState extends State<StudySessionPage> {
                     widget.pdfBytes!,
                     onDocumentLoadFailed: (details) {
                       if (!mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text('فایل باز نشد. فایل ممکن است آسیب‌دیده یا رمزدار باشد.'), action: SnackBarAction(label: 'انتخاب مجدد', onPressed: () => Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => PdfUploadPage(userId: widget.userId))))));
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const AppText('فایل باز نشد. فایل ممکن است آسیب‌دیده یا رمزدار باشد.'), action: SnackBarAction(label: 'انتخاب مجدد', onPressed: () => Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => PdfUploadPage(userId: widget.userId))))));
                     },
                   ) : ExamSplitView(
                     questionsPane: _buildQuestionsPane(),
@@ -863,7 +864,7 @@ class _StudySessionPageState extends State<StudySessionPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
+        AppText(
           'READING PASSAGE $ordinal',
           style: TextStyle(
             fontSize: 12,
@@ -874,7 +875,7 @@ class _StudySessionPageState extends State<StudySessionPage> {
         ),
         const SizedBox(height: 8),
         if (r.instructions.isNotEmpty) ...[
-          Text(
+          AppText(
             r.instructions,
             style: TextStyle(
               fontSize: 12.5,
@@ -885,7 +886,7 @@ class _StudySessionPageState extends State<StudySessionPage> {
           ),
           const SizedBox(height: 12),
         ],
-        Text(
+        AppText(
           r.title,
           style: const TextStyle(
             fontSize: 21,
@@ -896,7 +897,7 @@ class _StudySessionPageState extends State<StudySessionPage> {
         ),
         if (r.subtitle.isNotEmpty) ...[
           const SizedBox(height: 6),
-          Text(
+          AppText(
             r.subtitle,
             style: TextStyle(
               fontSize: 13.5,
@@ -908,7 +909,7 @@ class _StudySessionPageState extends State<StudySessionPage> {
         ],
         if (r.source.isNotEmpty) ...[
           const SizedBox(height: 8),
-          Text(
+          AppText(
             'Source: ${r.source}',
             style: TextStyle(
               fontSize: 11.5,
@@ -934,7 +935,7 @@ class _StudySessionPageState extends State<StudySessionPage> {
   Widget _buildQuestionsPane() {
     return _paneBox(
       child: Directionality(
-        textDirection: TextDirection.rtl,
+        textDirection: AppLanguage.of(context).direction,
         child: Scrollbar(
           controller: _questionScroll,
           thumbVisibility: true,
@@ -944,7 +945,7 @@ class _StudySessionPageState extends State<StudySessionPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text(
+                const AppText(
                   'سوالات ✍️',
                   style: TextStyle(
                       fontSize: 16,
@@ -952,7 +953,7 @@ class _StudySessionPageState extends State<StudySessionPage> {
                       color: AppColors.navy),
                 ),
                 const SizedBox(height: 4),
-                Text(
+                AppText(
                   'متن در سمت راست است. می‌تونی همزمان متن رو بخونی و جواب بدی.',
                   style: TextStyle(
                       fontSize: 12.5,
@@ -974,7 +975,7 @@ class _StudySessionPageState extends State<StudySessionPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
+        AppText(
           '$answered از ${_questions.length} سوال پاسخ داده شده',
           textAlign: TextAlign.center,
           style: TextStyle(
@@ -989,7 +990,7 @@ class _StudySessionPageState extends State<StudySessionPage> {
         Center(
           child: TextButton(
             onPressed: _submitting ? null : _skipPart,
-            child: Text(
+            child: AppText(
               'رد کردن و رفتن به مرحله‌ی بعد ←',
               style: TextStyle(
                 fontSize: 13,
@@ -1016,7 +1017,7 @@ class _StudySessionPageState extends State<StudySessionPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (q.groupHeader.isNotEmpty) ...[
-              Text(
+              AppText(
                 q.groupHeader,
                 style: TextStyle(
                   fontSize: 13,
@@ -1027,7 +1028,7 @@ class _StudySessionPageState extends State<StudySessionPage> {
               ),
               const Divider(height: 20),
             ],
-            Text(
+            AppText(
               q.prompt,
               style: const TextStyle(
                   fontSize: 15,
@@ -1044,7 +1045,7 @@ class _StudySessionPageState extends State<StudySessionPage> {
                 onChanged: (_) => setState(() {}),
                 style: const TextStyle(fontSize: 14.5),
                 decoration: InputDecoration(
-                  hintText: 'ONE WORD ONLY',
+                  hintText: tr('ONE WORD ONLY', context),
                   hintStyle: TextStyle(
                       fontSize: 13,
                       color: AppColors.navy.withOpacity(0.35)),
@@ -1067,7 +1068,7 @@ class _StudySessionPageState extends State<StudySessionPage> {
                   groupValue: _answers[q.id],
                   onChanged: (v) => setState(() => _answers[q.id] = v!),
                   title:
-                      Text(q.options[i], style: const TextStyle(fontSize: 14)),
+                      AppText(q.options[i], style: const TextStyle(fontSize: 14)),
                   activeColor: AppColors.purple,
                   dense: true,
                   contentPadding: EdgeInsets.zero,
@@ -1106,7 +1107,7 @@ class _StudySessionPageState extends State<StudySessionPage> {
               size: 20, color: low ? Colors.redAccent : AppColors.purple),
           const SizedBox(width: 10),
           const Expanded(
-            child: Text(
+            child: AppText(
               'زمان باقی‌مانده‌ی این جلسه',
               style: TextStyle(
                   fontSize: 12.5, height: 1.8, color: AppColors.navy),
@@ -1115,7 +1116,7 @@ class _StudySessionPageState extends State<StudySessionPage> {
           const SizedBox(width: 10),
           Directionality(
             textDirection: TextDirection.ltr,
-            child: Text(
+            child: AppText(
               '${m.toString().padLeft(2, '0')}:'
               '${sec.toString().padLeft(2, '0')}',
               style: TextStyle(

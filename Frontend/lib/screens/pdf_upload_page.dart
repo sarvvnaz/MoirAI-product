@@ -1,3 +1,4 @@
+import '../l10n/app_language.dart';
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -75,7 +76,7 @@ class _PdfUploadPageState extends State<PdfUploadPage> {
               color: AppColors.purple,
             ),
             const SizedBox(height: 20),
-            const Text(
+            const AppText(
               'فایلت رو انتخاب کن',
               textAlign: TextAlign.center,
               style: TextStyle(
@@ -85,7 +86,7 @@ class _PdfUploadPageState extends State<PdfUploadPage> {
               ),
             ),
             const SizedBox(height: 16),
-            const Text(
+            const AppText(
               'PDF تا ۳۰ مگابایت',
               textAlign: TextAlign.center,
             ),
@@ -95,11 +96,11 @@ class _PdfUploadPageState extends State<PdfUploadPage> {
               icon: const Icon(Icons.upload_file),
               label: Padding(
                 padding: const EdgeInsets.all(14),
-                child: Text(_busy ? 'در حال انتخاب…' : _name ?? 'انتخاب PDF'),
+                child: AppText(_busy ? 'در حال انتخاب…' : _name ?? 'انتخاب PDF'),
               ),
             ),
             const SizedBox(height: 12),
-            const Text(
+            const AppText(
               'فقط در مرورگر باز می‌شه؛ بعد از تازه‌سازی، دوباره انتخابش کن.',
               textAlign: TextAlign.center,
               style: TextStyle(height: 1.8),
@@ -107,7 +108,7 @@ class _PdfUploadPageState extends State<PdfUploadPage> {
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.only(top: 16),
-                child: Text(
+                child: AppText(
                   _error!,
                   style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),

@@ -1,3 +1,4 @@
+import '../l10n/app_language.dart';
 import 'package:flutter/material.dart';
 import '../data/study_steps.dart';
 import '../theme/app_colors.dart';
@@ -13,7 +14,7 @@ class IntroPage extends StatelessWidget {
       children: [
         TextButton(
           onPressed: () => Navigator.pushNamed(context, '/login'),
-          child: const Text('ورود به حساب'),
+          child: const AppText('ورود به حساب'),
         ),
         const Spacer(),
         SizedBox(
@@ -30,7 +31,7 @@ class IntroPage extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          const AppText(
             'برای چیزی که برات مهمه، وقت بذار',
             style: TextStyle(
               fontSize: 26,
@@ -40,7 +41,7 @@ class IntroPage extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-          const Text(
+          const AppText(
             'مویرای همراه مطالعه‌ی توئه؛ با یادآوری هدفت، کمکت می‌کنه وقتی حواست پرت شد دوباره برگردی.',
             style: TextStyle(fontSize: 16, height: 1.9, color: AppColors.navy),
           ),
@@ -76,7 +77,7 @@ class IntroPage extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              AppText(
                 title,
                 style: const TextStyle(
                   fontSize: 17,
@@ -85,7 +86,7 @@ class IntroPage extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 6),
-              Text(
+              AppText(
                 text,
                 style: const TextStyle(
                   fontSize: 15,

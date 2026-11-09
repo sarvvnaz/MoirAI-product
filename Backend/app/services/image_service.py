@@ -448,7 +448,7 @@ def generate_reminder_set(db: Session, user: models.User,
             "their back, or a hidden/cropped face. Do NOT make hands the "
             "subject and never a close-up of hands/fingers. Emphasize the "
             f"setting and the feeling. No readable text or signs. {angle_rule}\n\n"
-            "cue rules (write in Persian, max 18 words): one warm "
+            f"cue rules (write in {'English' if fields.get('language') == 'en' else 'Persian'}, max 18 words): one warm "
             "FIRST-PERSON sentence in the participant's own voice (من/دارم/"
             "می‌بینم…), FEELING FIRST then the situation — like «آرام و مطمئنم، "
             "پشت میزم دارم ...». Never address them as «تو»; the sentence must "

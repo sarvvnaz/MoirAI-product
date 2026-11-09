@@ -1,3 +1,4 @@
+import '../l10n/app_language.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../data/study_steps.dart';
@@ -55,12 +56,12 @@ class _LoginPageState extends State<LoginPage> {
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('کد یا رمز درست نیست')),
+        const SnackBar(content: AppText('کد یا رمز درست نیست')),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('مشکل در اتصال به سرور')),
+        const SnackBar(content: AppText('مشکل در اتصال به سرور')),
       );
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -76,7 +77,7 @@ class _LoginPageState extends State<LoginPage> {
           TextButton(
             onPressed: () =>
                 Navigator.pushReplacementNamed(context, '/'),
-            child: const Text('بازگشت',
+            child: const AppText('بازگشت',
                 style: TextStyle(color: AppColors.purple)),
           ),
           const Spacer(),
@@ -98,7 +99,7 @@ class _LoginPageState extends State<LoginPage> {
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text(
+              const AppText(
                 'خوش برگشتی 👋',
                 style: TextStyle(
                     fontSize: 22,
@@ -106,7 +107,7 @@ class _LoginPageState extends State<LoginPage> {
                     color: AppColors.navy),
               ),
               const SizedBox(height: 10),
-              const Text(
+              const AppText(
                 'شناسه و رمزت را وارد کن تا از همان‌جایی که بودی ادامه بدهی.',
                 style:
                     TextStyle(fontSize: 15, height: 1.8, color: AppColors.navy),
@@ -116,9 +117,9 @@ class _LoginPageState extends State<LoginPage> {
                 controller: _codeController,
                 textDirection: TextDirection.ltr,
                 validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'شناسه را وارد کن' : null,
+                    (v == null || v.trim().isEmpty) ? tr('شناسه را وارد کن', context) : null,
                 decoration: InputDecoration(
-                  labelText: 'شناسه‌ی تو',
+                  labelText: tr('شناسه‌ی تو', context),
                   filled: true,
                   fillColor: Colors.white,
                   border: OutlineInputBorder(
@@ -132,10 +133,10 @@ class _LoginPageState extends State<LoginPage> {
                 controller: _passwordController,
                 obscureText: true,
                 validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'رمز را وارد کن' : null,
+                    (v == null || v.trim().isEmpty) ? tr('رمز را وارد کن', context) : null,
                 onFieldSubmitted: (_) => _login(),
                 decoration: InputDecoration(
-                  labelText: 'رمز',
+                  labelText: tr('رمز', context),
                   filled: true,
                   fillColor: Colors.white,
                   border: OutlineInputBorder(

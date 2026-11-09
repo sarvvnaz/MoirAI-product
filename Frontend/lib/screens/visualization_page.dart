@@ -1,3 +1,4 @@
+import '../l10n/app_language.dart';
 import 'package:flutter/material.dart';
 
 import '../data/study_steps.dart';
@@ -96,7 +97,7 @@ class _VisualizationPageState extends State<VisualizationPage> {
                       color: AppColors.purple.withOpacity(0.07),
                       borderRadius: BorderRadius.circular(14),
                     ),
-                    child: const Text(
+                    child: const AppText(
                       _instruction,
                       style: TextStyle(
                           fontSize: 15, height: 2.0, color: AppColors.navy),
@@ -112,7 +113,7 @@ class _VisualizationPageState extends State<VisualizationPage> {
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(16),
                       ),
-                      child: Text(
+                      child: AppText(
                         _cue!.trim(),
                         style: const TextStyle(
                             fontSize: 16.5,
@@ -128,7 +129,7 @@ class _VisualizationPageState extends State<VisualizationPage> {
                     // questionnaire can still be answered.
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 40),
-                      child: Text(
+                      child: AppText(
                         'ساخت صحنه‌ی تو این بار کامل نشد. می‌تونی ادامه بدی.',
                         textAlign: TextAlign.center,
                         style: TextStyle(

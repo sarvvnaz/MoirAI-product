@@ -1,3 +1,4 @@
+import 'l10n/app_language.dart';
 // main.dart — FULLY FIXED FOR WEB + DESKTOP
 import 'dart:async';
 import 'dart:convert';
@@ -29,14 +30,8 @@ import 'dart:html' as html;
 
 // Conditionally import dart:io
 // ignore: avoid_web_libraries_in_flutter
-import 'dart:io' show
-
-  Platform,
-  Process,
-  Directory,
-  File,
-  ProcessStartMode,
-  HttpClient;
+import 'dart:io'
+    show Platform, Process, Directory, File, ProcessStartMode, HttpClient;
 
 /// BACKEND HANDLER — disabled entirely on Web
 class LocalBackend {
@@ -69,19 +64,28 @@ class LocalBackend {
       if (Platform.isMacOS) {
         await Process.run('chmod', ['+x', exe]);
       }
-      return Process.start(exe, [],
-          environment: env, mode: ProcessStartMode.detached);
+      return Process.start(
+        exe,
+        [],
+        environment: env,
+        mode: ProcessStartMode.detached,
+      );
     }
 
     Future<Process> spawnDev() async {
       final devEntry = p.join(appDir, '..', 'Backend', 'app', 'app.py');
       if (!File(devEntry).existsSync()) {
         throw Exception(
-            'No packaged backend and no Python source found at $devEntry');
+          'No packaged backend and no Python source found at $devEntry',
+        );
       }
       final py = Platform.isWindows ? 'python' : 'python3';
-      return Process.start(py, [devEntry],
-          environment: env, mode: ProcessStartMode.detached);
+      return Process.start(
+        py,
+        [devEntry],
+        environment: env,
+        mode: ProcessStartMode.detached,
+      );
     }
 
     try {
@@ -103,8 +107,9 @@ class LocalBackend {
     }
   }
 
-  static Future<bool> _waitForHealth(
-      {Duration timeout = const Duration(seconds: 6)}) async {
+  static Future<bool> _waitForHealth({
+    Duration timeout = const Duration(seconds: 6),
+  }) async {
     if (kIsWeb) return true; // Web never runs backend
 
     final deadline = DateTime.now().add(timeout);
@@ -134,8 +139,23 @@ class LocalBackend {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  await AppLanguage.instance.load();
+  void updateDocumentLanguage() {
+    if (!kIsWeb) return;
+    html.document.documentElement?.setAttribute(
+      'lang',
+      AppLanguage.instance.code,
+    );
+    html.document.documentElement?.setAttribute(
+      'dir',
+      AppLanguage.instance.isEnglish ? 'ltr' : 'rtl',
+    );
+    html.document.title = AppLanguage.instance.isEnglish ? 'Moirai' : 'مویرای';
+  }
 
-  runApp(const moiraiApp());
+  updateDocumentLanguage();
+  AppLanguage.instance.addListener(updateDocumentLanguage);
+  runApp(LanguageScope(child: const moiraiApp()));
 }
 
 class moiraiApp extends StatelessWidget {
@@ -144,7 +164,11 @@ class moiraiApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'مویرای',
+      title: AppLanguage.of(context).isEnglish ? 'Moirai' : 'مویرای',
+      builder: (context, child) => Directionality(
+        textDirection: AppLanguage.of(context).direction,
+        child: child!,
+      ),
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         fontFamily: 'Vazirmatn',
@@ -178,9 +202,7 @@ class moiraiApp extends StatelessWidget {
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
           fillColor: Colors.white,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         ),
       ),
       // No initialRoute: on web, Flutter reads the route from the URL

@@ -1,3 +1,4 @@
+import '../l10n/app_language.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../data/study_steps.dart';
@@ -70,12 +71,12 @@ class _SignUpPageState extends State<SignUpPage> {
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('مشکلی پیش آمد (${response.statusCode})')),
+        SnackBar(content: AppText('مشکلی پیش آمد (${response.statusCode})')),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('مشکل در اتصال به سرور')),
+        const SnackBar(content: AppText('مشکل در اتصال به سرور')),
       );
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -84,8 +85,8 @@ class _SignUpPageState extends State<SignUpPage> {
 
   InputDecoration _decoration(String label, {String? hint}) {
     return InputDecoration(
-      labelText: label,
-      hintText: hint,
+      labelText: tr(label, context),
+      hintText: hint == null ? null : tr(hint, context),
       filled: true,
       fillColor: Colors.white,
       border: OutlineInputBorder(
@@ -103,7 +104,7 @@ class _SignUpPageState extends State<SignUpPage> {
         children: [
           TextButton(
             onPressed: () => Navigator.pushReplacementNamed(context, '/login'),
-            child: const Text('حساب داری؟ وارد شو',
+            child: const AppText('حساب داری؟ وارد شو',
                 style: TextStyle(color: AppColors.purple)),
           ),
           const Spacer(),
@@ -125,7 +126,7 @@ class _SignUpPageState extends State<SignUpPage> {
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text(
+              const AppText(
                 'ایجاد حساب کاربری ',
                 style: TextStyle(
                     fontSize: 22,
@@ -133,7 +134,7 @@ class _SignUpPageState extends State<SignUpPage> {
                     color: AppColors.navy),
               ),
               const SizedBox(height: 10),
-              const Text(
+              const AppText(
                 'برای ذخیره‌ی گفتگو و یادآورت، یک حساب بساز.',
                 style:
                     TextStyle(fontSize: 15, height: 1.9, color: AppColors.navy),
@@ -143,10 +144,10 @@ class _SignUpPageState extends State<SignUpPage> {
                 controller: _idController,
                 textDirection: TextDirection.ltr,
                 validator: (v) {
-                  if (_idError != null) return _idError;
+                  if (_idError != null) return tr(_idError!, context);
                   final t = (v ?? '').trim();
-                  if (t.length < 3) return 'شناسه حداقل ۳ حرف باشد';
-                  if (t.length > 32) return 'شناسه حداکثر ۳۲ حرف باشد';
+                  if (t.length < 3) return tr('شناسه حداقل ۳ حرف باشد', context);
+                  if (t.length > 32) return tr('شناسه حداکثر ۳۲ حرف باشد', context);
                   return null;
                 },
                 decoration: _decoration('یک شناسه برای خودت انتخاب کن',
@@ -157,7 +158,7 @@ class _SignUpPageState extends State<SignUpPage> {
                 controller: _passwordController,
                 obscureText: true,
                 validator: (v) => (v == null || v.trim().length < 4)
-                    ? 'رمز حداقل ۴ حرف باشد'
+                    ? tr('رمز حداقل ۴ حرف باشد', context)
                     : null,
                 decoration: _decoration('یک رمز ساده (حداقل ۴ حرف)'),
               ),

@@ -276,3 +276,60 @@ def test_place_reply_cannot_drift_into_objects_or_invent_a_scene(db, make_user, 
     fields = json.loads(state.fields_json)
     assert fields['where'] == 'دانشکده کامپیوتر، طبقه هشت'
     assert not fields.get('objects')
+
+
+def test_english_chat_covers_all_steps_and_saves_language(client, db, make_user, monkeypatch):
+    from app.services.eft_chat_service_v2 import EFTChatServiceV2
+    from app.services.chat_languages import QUESTIONS_EN
+    user = make_user(code='LANG-EN')
+    client.login(user)
+    monkeypatch.setattr(EFTChatServiceV2, '_llm_turn', lambda self, fields, qi, history, **kw: {
+        'question_status': 'collected', 'extracted_answer': history[-1]['content'],
+        'reply': 'Invented scene that must not be shown.', 'next_question': 'Wrong step?',
+    })
+    first = client.post('/api/eft/chat', json={'message': '', 'language': 'en'}).json()
+    assert 'long-term goal' in first['bot']
+    answers = ['Write a book', 'Next spring, morning', 'My home office',
+               'Sharing my manuscript', 'A book and desk', 'My friend', 'Proud and calm']
+    for index, answer in enumerate(answers):
+        result = client.post('/api/eft/chat', json={'message': answer, 'language': 'en'}).json()
+        if index < 6:
+            assert result['question_index'] == index + 1
+            assert result['bot'] == QUESTIONS_EN[index + 1]
+    assert 'confirm' in result['bot']
+    assert 'Goal: Write a book' in result['bot']
+    final = client.post('/api/eft/chat', json={'message': 'confirm', 'language': 'en'}).json()
+    assert final['can_start_session'] is True
+    episode = db.query(models.EFTEpisode).filter_by(user_id=user.id).one()
+    assert json.loads(episode.episode_json)['language'] == 'en'
+
+
+def test_switching_chat_language_preserves_answers_and_step(client, db, make_user, monkeypatch):
+    from app.services.eft_chat_service_v2 import EFTChatServiceV2
+    from app.services.chat_languages import QUESTIONS_EN
+    user = make_user(code='LANG-SWITCH')
+    client.login(user)
+    db.add(models.EFTChatState(user_id=user.id, current_step=2,
+        fields_json=json.dumps({'goal': 'My project', 'when': 'Next spring', '_language': 'fa'})))
+    db.commit()
+    english = client.post('/api/eft/chat', json={'message': '', 'language': 'en'}).json()
+    assert english['question_index'] == 2
+    assert english['bot'] == QUESTIONS_EN[2]
+    ideas = client.post('/api/eft/inspire?language=en').json()['suggestions']
+    assert ideas and all(not any('\u0600' <= ch <= '\u06ff' for ch in idea) for idea in ideas)
+    persian = client.post('/api/eft/chat', json={'message': '', 'language': 'fa'}).json()
+    assert persian['question_index'] == 2
+    assert 'کجایی' in persian['bot']
+    state = db.query(models.EFTChatState).filter_by(user_id=user.id).one()
+    assert json.loads(state.fields_json)['goal'] == 'My project'
+
+
+def test_manual_scene_keeps_selected_language_for_image_caption(client, db, make_user):
+    user = make_user(code='MANUAL-EN')
+    client.login(user)
+    answers = dict(zip(['goal', 'when', 'where', 'action', 'objects', 'who', 'feeling'],
+        ['My book', 'Next spring', 'At home', 'Writing', 'A desk', 'A friend', 'Proud']))
+    response = client.post('/api/eft/manual', json={'answers': answers, 'language': 'en'})
+    assert response.status_code == 200, response.text
+    episode = db.query(models.EFTEpisode).filter_by(user_id=user.id).one()
+    assert json.loads(episode.episode_json)['language'] == 'en'

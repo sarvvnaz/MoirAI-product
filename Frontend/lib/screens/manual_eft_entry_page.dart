@@ -1,3 +1,4 @@
+import '../l10n/app_language.dart';
 import 'package:flutter/material.dart';
 import '../data/study_steps.dart';
 import '../services/api_service.dart';
@@ -88,14 +89,14 @@ class _ManualEftEntryPageState extends State<ManualEftEntryPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => Directionality(
-        textDirection: TextDirection.rtl,
+        textDirection: AppLanguage.of(context).direction,
         child: AlertDialog(
           backgroundColor: Colors.white,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          title: const Text('ثبت نهایی پاسخ‌ها؟',
+          title: const AppText('ثبت نهایی پاسخ‌ها؟',
               style: TextStyle(color: AppColors.navy, fontSize: 18)),
-          content: const Text(
+          content: const AppText(
             'بعد از ثبت، دیگه نمی‌تونی به گفتگو برگردی و از اون راه ادامه '
             'بدی. اگه هنوز می‌خوای گفتگو رو امتحان کنی، «بازگشت» رو بزن.',
             style: TextStyle(fontSize: 14.5, height: 1.9, color: AppColors.navy),
@@ -103,7 +104,7 @@ class _ManualEftEntryPageState extends State<ManualEftEntryPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('بازگشت',
+              child: const AppText('بازگشت',
                   style: TextStyle(color: AppColors.navy)),
             ),
             ElevatedButton(
@@ -113,7 +114,7 @@ class _ManualEftEntryPageState extends State<ManualEftEntryPage> {
                     borderRadius: BorderRadius.circular(10)),
               ),
               onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('بله، ثبت کن',
+              child: const AppText('بله، ثبت کن',
                   style: TextStyle(color: Colors.white)),
             ),
           ],
@@ -157,14 +158,14 @@ class _ManualEftEntryPageState extends State<ManualEftEntryPage> {
             onPressed: _submitting ? null : () => Navigator.of(context).pop(),
             icon: const Icon(Icons.arrow_forward_rounded,
                 size: 18, color: AppColors.purple),
-            label: const Text('بازگشت به گفتگو',
+            label: const AppText('بازگشت به گفتگو',
                 style: TextStyle(color: AppColors.purple, fontSize: 13.5)),
           ),
           const Spacer(),
           if (!_allFilled)
             const Padding(
               padding: EdgeInsets.only(left: 12),
-              child: Text('همه‌ی ۷ سوال را کامل کن',
+              child: AppText('همه‌ی ۷ سوال را کامل کن',
                   style: TextStyle(fontSize: 12.5, color: AppColors.navy)),
             ),
           SizedBox(
@@ -182,7 +183,7 @@ class _ManualEftEntryPageState extends State<ManualEftEntryPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            const AppText(
               'نوشتن دستی پاسخ‌ها ✍️',
               style: TextStyle(
                   fontSize: 21,
@@ -190,7 +191,7 @@ class _ManualEftEntryPageState extends State<ManualEftEntryPage> {
                   color: AppColors.navy),
             ),
             const SizedBox(height: 8),
-            const Text(
+            const AppText(
               'همون ۷ سوال گفتگو، این بار با جای خالی برای نوشتن. هر چی '
               'دقیق‌تر بنویسی، تصویرت شخصی‌تر می‌شه. اگه هنوز همه‌ی جزئیات '
               'رو نمی‌دونی اشکالی نداره — همون چیزی که به ذهنت می‌رسه کافیه.',
@@ -201,7 +202,7 @@ class _ManualEftEntryPageState extends State<ManualEftEntryPage> {
             for (final q in _questions) _field(q),
             if (_error != null) ...[
               const SizedBox(height: 4),
-              Text(_error!,
+              AppText(_error!,
                   style: const TextStyle(
                       fontSize: 13, color: Colors.redAccent, height: 1.7)),
             ],
@@ -217,7 +218,7 @@ class _ManualEftEntryPageState extends State<ManualEftEntryPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
+          AppText(
             q.label,
             style: const TextStyle(
                 fontSize: 15,
@@ -235,7 +236,7 @@ class _ManualEftEntryPageState extends State<ManualEftEntryPage> {
             onChanged: (_) => setState(() {}),
             style: const TextStyle(fontSize: 14.5, height: 1.7),
             decoration: InputDecoration(
-              hintText: q.hint,
+              hintText: tr(q.hint, context),
               hintStyle: TextStyle(
                   fontSize: 13, color: AppColors.navy.withOpacity(0.45)),
               filled: true,
