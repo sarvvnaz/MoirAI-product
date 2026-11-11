@@ -1,25 +1,25 @@
-# Product checkpoint
+# Current product checkpoint
 
-Compared with the initial product repository:
+Moirai retains its original visual style and chatbot conversation mechanics, with a simplified bilingual product flow and user-selected PDFs.
 
-- Keep the original visual style and add a bundled Persian font.
-- Replace research onboarding with a concise product introduction and explain account creation.
-- Remove privacy-screen navigation and consent logging. Pause profile, pre/post, and post-chat questionnaires; retain their source.
-- Route signup through the shared product router, directly to the chatbot for new users.
-- Generalize the goal beyond English learning and academic research. Keep questions conversational and tied to the active step; prevent generated acknowledgments from inventing scene details or asking the wrong next question.
-- Remove the importance rating. Add one optional 1–5 conversation-experience rating while the image generates, saved explicitly in the database.
-- Support user-selected PDFs up to 30 MB in the existing reader. Files stay in browser memory; fixed quizzes and automatic exam completion do not apply to uploaded PDFs.
-- Make extension installation optional. Retain existing reminder generation, visualization, reading-session completion, and storage infrastructure.
-- Request natural neck-down or softly blurred faces in future images. Correct the awkward fallback suggestion and show Retry promptly when generation fails.
-- Include the current local backend/session/visualization support required by this product version, which differed from the upstream research checkout before this work.
-- Refresh the served Flutter build; omit local credentials, databases, caches, backup archives, and unrelated research documents.
+## Latest chatbot update
 
-Validation: 14 backend product-flow tests, 3 PDF validation tests, and a release web build. One live image generation succeeded with the locally configured `gpt-image-2`. Existing research-only tests have not all been migrated.
+- Restore the original chatbot tone, follow-up decisions, step handling, and confirmation behavior. Keep the product route directly from chat to image preparation.
+- Broaden only the goal framing: studying can support any long-term goal, including work, skills, education, and personal projects. Match the English translation.
+- Translate chatbot display text at the API boundary. Fixed questions, introduction, importance wording, and inspiration examples retain the same content and examples in English.
+- Translate generated follow-ups and summaries together in one cached request, with an eight-second timeout and no retries. If translation fails, preserve the original text and show an explicit notice.
+- Keep stored original messages, answers, step flags, and episode data unchanged by translation. Normalize translated confirm/edit commands only at the confirmation stage.
+- Remove the superseded language-specific conversation implementation and its tests.
 
-## Bilingual checkpoint
+## Retained product features
 
-Add a persistent Persian/English switch to the shared header. Translate active product screens, validation messages, reader controls, extension help, and the manual entry fallback. Switch layout direction without clearing forms, PDFs, or navigation. Keep user-written text in its original language.
+- Persistent Persian/English interface switch and automatic text direction.
+- Concise onboarding, no privacy screen, and paused research questionnaires.
+- Local PDF selection up to 30 MB; no fixed quiz or exam timer for uploaded files.
+- Optional 1–5 waiting feedback saved in the database and optional browser extension.
+- Reminder image generation, with prompts requesting natural neck-down framing or softly blurred faces.
+- Bundled Persian font and refreshed served Flutter build.
 
-Pass the selected language to the chatbot and inspiration endpoints, localize the seven questions, review/confirmation, and examples, and save the episode language for generated reminder captions. Existing conversations retain their original messages; new replies follow the selected language. Existing generated captions are preserved.
+Validation: 17 backend product/translation tests pass. The served release web build includes the restored chat screen and translation notices. English translation tests cover paired wording, state preservation, bounded failure fallback, and command boundaries. The pre-existing research-only tests have not all been adapted to the product flow.
 
-Validation: 17 backend product-flow tests, including a complete English conversation and switching languages mid-conversation; 5 Flutter language/PDF tests; a release web build. Manually verified both directions and preservation of typed signup text in the browser.
+Local credentials, runtime databases, personal images, backup archives, caches, and unrelated research documents are excluded from the commit.

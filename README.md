@@ -6,9 +6,9 @@ Users create an account, describe a personally meaningful future in a guided con
 
 ## Current experience
 
-- Persistent Persian/English switch, translated interface and chatbot, and automatic reading direction.
+- Persistent Persian/English switch, translated interface, and automatic reading direction.
 - Concise introduction and account creation.
-- Seven conversational steps tied to the user's own long-term goal, with no importance rating or post-chat questionnaire.
+- Seven conversational steps tied to the user's own long-term goal, using the unchanged original chatbot behavior, with faithful English display translations and without the separate post-chat questionnaire.
 - One optional 1–5 conversation rating while the reminder image generates, persisted as `product_feedback` in `UserActivity`.
 - Image prompts request natural neck-down framing or softly defocused faces, avoiding identifiable facial details and uncanny masking. Generated results still require visual review.
 - PDF selection up to 30 MB, with file-signature validation. Files stay in browser memory and must be selected again after refresh.

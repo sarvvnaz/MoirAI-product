@@ -49,12 +49,9 @@ from app.database import models
 # image_service._EPISODE_KEYS). Each anchors the participant in the SAME
 # imagined future scene so the answers stay coherent enough to build an image.
 #
-# THE AUDIENCE: students in a research-methods course. Their distal goal is
-# ACADEMIC — finishing the research, defending it, graduating. So the scene
-# the questions build is the day of the defence, the defence, the moment the
-# supervisor says yes, the graduation hall. That is the same mechanism as
-# before (a concrete, personally-meaningful future moment) pointed at a
-# different goal.
+# THE AUDIENCE: anyone studying toward a personally meaningful long-term
+# goal, including work, skills, education, or a personal project.
+# The episodic questions and conversation mechanics remain the same.
 #
 # Each question uses the FIXED generic anchor («وقتی به هدفت رسیدی») —
 # never the participant's own goal text (that made questions convoluted).
@@ -65,9 +62,10 @@ QUESTIONS: List[Dict[str, str]] = [
     {"key": "goal",
      "short": "هدف",
      "zoom": "distal goal — the abstract ambition, widest level of the zoom",
-     "text": "بیا از چیزی شروع کنیم که برات مهمه: کاری که می‌خوای روش وقت بذاری، "
+     "text": "بیا از اینجا شروع کنیم: مطالعه‌ای که می‌خوای انجام بدی، "
              "به کدوم هدف بلندمدتت کمک می‌کنه؟ 🎯\n"
-             "می‌تونه رشد در کار، تحصیل، یک پروژه‌ی شخصی یا هر چیزی باشه که خودت می‌خوای."},
+             "می‌تونه پیشرفت توی کار، یاد گرفتن یه مهارت، ادامه‌ی تحصیل، "
+             "انجام یه پروژه‌ی شخصی، یا هر چیزی باشه که برات مهمه."},
     {"key": "when",
      "short": "زمان",
      # Still the single most important narrowing step — a period of life is
@@ -77,27 +75,39 @@ QUESTIONS: List[Dict[str, str]] = [
      # 24-hour constraint made people stop and work out whether their idea
      # qualified, which is the opposite of imagining.
      "zoom": "temporal window, narrowed to ONE moment via time of day",
-     "text": "اون لحظه‌ای که به هدفت رسیدی رو کی تصور می‌کنی؟ چند وقت دیگه‌ست و چه وقتِ روزه؟"},
+     "text": "حالا بریم سراغ زمان. دوست داری چند وقت دیگه به این حس می‌رسی — "
+             "آخر ترم؟ آخر سال؟ یک سال دیگه؟\n"
+             "و اون لحظه کدوم فصل و کدوم وقتِ روزه — صبح، بعدازظهر، یا شب؟"},
     {"key": "where",
      "short": "مکان",
      "zoom": "five-field schema: the precise setting of that single day",
-     "text": "توی اون لحظه کجایی؟ مثلاً خونه، محل کار یا جای دیگه‌ای که توی ذهنته."},
+     "text": "توی اون روز، دقیقاً کجایی؟ هر چی دقیق‌تر بهتر — مثلاً «سالن "
+             "دفاع دانشکده»، «اتاق اساتید»، «سالن فارغ‌التحصیلی»، «کلاس "
+             "دفاع»، یا محل کار. اگه دانشگاه یا شهر خاصی توی ذهنته، اسمشو بگو."},
     {"key": "action",
      "short": "کار",
      "zoom": "five-field schema: the main action, narrated in present tense",
-     "text": "توی اون لحظه داری چه کاری انجام می‌دی؟"},
+     "text": "توی اون لحظه داری چیکار می‌کنی؟ طوری بگو که انگار همین الان "
+             "داره اتفاق می‌افته — مثلاً «دارم یافته‌های پایان‌نامه‌ام رو جلوی "
+             "داوران ارائه می‌دم» یا «دارم مدرک فارغ‌التحصیلی رو توی دستم "
+             "می‌گیرم»."},
     {"key": "objects",
      "short": "اطراف",
      "zoom": "five-field schema: tangible objects that anchor the scene",
-     "text": "یکی دو تا چیز که اونجا دور و برت می‌بینی چیه؟"},
+     "text": "چند تا چیز که دور و برت می‌بینی رو بگو — همون جزئیات کوچیک. "
+             "مثلاً یه نسخه‌ی چاپی پایان‌نامه، لپ‌تاپ باز، پروژکتور روشن، "
+             "یه لیوان چای گرم، پنجره‌ای که بیرونش بارونه."},
     {"key": "who",
      "short": "افراد",
      "zoom": "five-field schema: specific people present",
-     "text": "توی اون لحظه تنهایی یا کسی هم کنارت هست؟"},
+     "text": "تنهایی یا توی جمع؟ اگه کسی هست، کیه — استاد راهنما، داورها، "
+             "هم‌کلاسی‌ها، خانواده، دوست، یا یکی از خانواده؟"},
     {"key": "feeling",
      "short": "احساس",
      "zoom": "five-field schema: emotion — closes the loop back to the goal",
-     "text": "وقتی خودت رو توی اون لحظه تصور می‌کنی، چه حسی داری؟"},
+     "text": "و آخریش: توی اون لحظه که به هدفت رسیدی چه حسی داری؟ مثلاً "
+             "آرامش، اعتماد به نفس، غرور، سبکی، یا هیجان. همون حسی که دلت "
+             "می‌خواد یه روز داشته باشی."},
 ]
 
 # Importance of the distal goal, 1–6 (Rosenbaum et al.: personal importance
@@ -124,13 +134,11 @@ IMPORTANCE_PROMPT = (
 IMPORTANCE_ACK = "ممنون 🌱 حالا بریم سراغ اون لحظه."
 
 
-from app.services.chat_languages import QUESTIONS_EN, LABELS_EN, INTRO_EN, IDEAS_EN
-
 def question_text(qi: int, fields: Dict[str, Any]) -> str:
     # fields kept in the signature so call sites stay unchanged.
-    return QUESTIONS_EN[qi] if fields.get("_language") == "en" else QUESTIONS[qi]["text"]
+    return QUESTIONS[qi]["text"]
 
-CONFIRM_WORDS = ["تایید", "تأیید", "yes", "ok", "confirm", "approve", "باشه", "درسته", "خوبه"]
+CONFIRM_WORDS = ["تایید", "تأیید", "yes", "ok", "باشه", "درسته", "خوبه"]
 EDIT_WORDS = ["ویرایش", "اصلاح", "تغییر", "edit"]
 
 # Short on purpose. The previous version said the right things at a length
@@ -140,7 +148,7 @@ EDIT_WORDS = ["ویرایش", "اصلاح", "تغییر", "edit"]
 INTRO = (
     " لطفاً این چند خط رو کامل بخون، رد کردنش کل تجربه رو سخت‌تر می‌کنه.\n\n"
     "قراره با هم یه روزِ مشخص از آینده‌ات رو پیدا کنیم؛ روزی که به "
-    "هدفت — همون هدفی که توی این درس دنبالشی — رسیدی. قدم به قدم می‌پرسم، "
+    "هدفت — همون هدف بلندمدتی که این مطالعه بهش کمک می‌کنه — رسیدی. قدم به قدم می‌پرسم، "
     "تو فقط تصور کن.\n\n"
     "• لازم نیست لحظه‌ی بزرگی باشه — یه روز معمولی توی مسیرت هم عالیه.\n"
     "• لازم نیست از آینده‌ات مطمئن باشی. دنبال پیش‌بینی نیستیم، دنبال یه "
@@ -186,9 +194,9 @@ FALLBACK_PROBE = "میشه یه کم بیشتر برام تعریف کنی؟ ه�
 # participant still has to supply everything that makes it an episode.
 FALLBACK_INSPIRE: Dict[str, List[str]] = {
     "goal": [
-        "می‌خوام از پایان‌نامه‌ام دفاع کنم.",
-        "می‌خوام پژوهشم چاپ بشه.",
-        "می‌خوام دوره‌ام رو با موفقیت تموم کنم.",
+        "می‌خوام توی کارم پیشرفت کنم.",
+        "می‌خوام یه مهارت جدید یاد بگیرم.",
+        "می‌خوام یه پروژه‌ی شخصی رو به نتیجه برسونم.",
     ],
     "when": [
         "آخر ترم، بهار، صبح.",
@@ -227,12 +235,9 @@ FALLBACK_INSPIRE: Dict[str, List[str]] = {
 
 
 class EFTChatServiceV2:
-    def __init__(self, db: Session, user_id: int, language: Optional[str] = None):
+    def __init__(self, db: Session, user_id: int):
         self.db = db
         self.user_id = user_id
-        existing = db.query(models.EFTChatState).filter_by(user_id=user_id).first()
-        stored_language = (json.loads(existing.fields_json or '{}').get('_language') if existing else None)
-        self.language = 'en' if (language or stored_language) == 'en' else 'fa'
         self._client = openai_client()
 
     # ── state helpers ──────────────────────────────────────────
@@ -276,18 +281,6 @@ class EFTChatServiceV2:
                 needs_user: bool = True, can_start: bool = False,
                 summary: Optional[str] = None,
                 awaiting_importance: bool = False) -> Dict[str, Any]:
-        if self.language == 'en' and any('\u0600' <= ch <= '\u06ff' for ch in bot):
-            if can_start:
-                bot = 'Your scene is saved. Continue to create your reminder.'
-            elif qi < len(QUESTIONS):
-                bot = question_text(qi, {**fields, '_language': 'en'})
-            elif fields.get('_append_key'):
-                bot = 'What would you like to add to ' + fields['_append_key'] + '?'
-            elif fields.get('_editing'):
-                bot = 'Which part would you like to edit? ' + ', '.join(q['key'] for q in QUESTIONS)
-            else:
-                summary = self._review_text(fields)
-                bot = "Here's your scene:\n\n" + summary + "\n\nType confirm to save it, or edit to change something."
         collected = [bool(fields.get(q["key"])) for q in QUESTIONS]
         return {
             "bot": bot,
@@ -305,9 +298,7 @@ class EFTChatServiceV2:
 
     def _needs_importance(self, fields: Dict[str, Any]) -> bool:
         """Rating is due once the distal goal exists and nothing is rated yet."""
-        # Research importance rating paused for the product.
-        # return bool(fields.get("goal")) and not fields.get(IMPORTANCE_KEY)
-        return False
+        return bool(fields.get("goal")) and not fields.get(IMPORTANCE_KEY)
 
     def _store_importance(self, state, fields, value: int) -> Dict[str, Any]:
         """Record the 1-6 rating, then continue into the next question."""
@@ -332,9 +323,7 @@ class EFTChatServiceV2:
                         importance: Optional[int] = None) -> Dict[str, Any]:
         state = self.reset_state() if reset else self._get_or_create_state()
         fields = self._fields(state)
-        fields["_language"] = self.language
         qi = int(state.current_step)
-        self._save(state, fields, qi)
         msg = (message or "").strip()
 
         # Importance chip tapped.
@@ -350,7 +339,7 @@ class EFTChatServiceV2:
         # First contact / empty ping → fixed intro (+ resume support).
         if not msg:
             if qi == 0 and not fields.get(QUESTIONS[0]["key"]):
-                return self._result(INTRO_EN if self.language == "en" else INTRO, fields, 0)
+                return self._result(INTRO, fields, 0)
             # Resume at the first UNANSWERED question (never a done one).
             resume_qi = next(
                 (i for i, x in enumerate(QUESTIONS)
@@ -443,17 +432,7 @@ class EFTChatServiceV2:
             fields[probed_key] = True
             if not reply:
                 reply = FALLBACK_PROBE
-            # Keep the clarification on the active step, regardless of model drift.
-            probes = {
-                'goal': 'دوست داری در بلندمدت به چی برسی؟',
-                'when': 'اون لحظه رو چه زمانی تصور می‌کنی؟',
-                'where': 'توی اون لحظه دقیقاً کجایی؟',
-                'action': 'اونجا داری چه کاری انجام می‌دی؟',
-                'objects': 'یکی دو تا چیز که اطرافت می‌بینی چیه؟',
-                'who': 'کسی هم کنارت هست یا تنهایی؟',
-                'feeling': 'توی اون لحظه چه حسی داری؟',
-            }
-            reply = QUESTIONS_EN[qi] if self.language == 'en' else probes[q['key']]
+            reply = ensure_question(reply, FALLBACK_PROBE)
             history.append({"role": "assistant", "content": reply})
             fields["_history"] = history[-16:]
             self._save(state, fields, qi)
@@ -494,8 +473,8 @@ class EFTChatServiceV2:
 
         if next_qi < len(QUESTIONS):
             canned = question_text(next_qi, fields)
-            # The active step owns its question. Do not echo generated scene prose.
-            bot = canned
+            asked = next_question if ("؟" in next_question or "?" in next_question) else canned
+            bot = f"{ack}{asked}".strip()
             history.append({"role": "assistant", "content": bot})
             fields["_history"] = history[-16:]
             self._save(state, fields, next_qi)
@@ -640,12 +619,13 @@ class EFTChatServiceV2:
         # Keep it that way when editing: moving one f-string interpolation
         # upward silently un-caches every token above it.
         static_rules = """You are a warm, steady Persian-speaking guide helping
-a person find ONE specific future day where they
-have made progress toward their own long-term goal connected to the task
-they chose. Do not assume that their task is English learning or academic research. An AI later turns their description into an IMAGE, so answers must
+a person studying toward a personally meaningful long-term goal find ONE
+specific future day where they have reached that goal. The goal may relate
+to work, learning a skill, education, or a personal project; do not assume
+that they are taking a research-methods course or doing academic research. An AI later turns their description into an IMAGE, so answers must
 be concrete and visual.
 
-WHO YOU ARE TALKING TO: people unsure about their future and often anxious
+WHO YOU ARE TALKING TO: students unsure about their future and often anxious
 about it. Imagining a good future can feel naive or painful. Be a guide, not
 an interviewer. Never imply there is a right answer.
 
@@ -655,7 +635,7 @@ EFT FUNDAMENTALS — use these to answer their questions for real:
   closer and worth working for.
 - Specific beats impressive. One ordinary day imagined vividly works better
   than a grand milestone imagined vaguely.
-- Reaching their personal goal can be just ONE PART of that day's feeling.
+- Reaching their long-term goal can be just ONE PART of that day's feeling.
 - Present tense makes it feel like a memory of the future, not a plan.
 - Being unsure about the future is normal and no obstacle to this.
 
@@ -679,14 +659,6 @@ ANSWER ANYTHING, STORE ONLY THE ACTIVE STEP:
 
 PRESENT TENSE: mirror their content back as happening now, even if they wrote future tense. Never correct them.
 
-STEP DISCIPLINE:
-- A specific place (room, building, floor, city, or address) fully answers WHERE.
-  Accept it as collected; do not ask for objects, sounds, weather, people, or actions.
-- Evaluate only the active field. Do not require information belonging to another step.
-- Never invent sensory details, furniture, weather, actions, or people in reply or extraction.
-- Reply is at most one short conversational acknowledgment, not a narrated scene.
-- Use natural colloquial Persian: هستی، می‌کنی، می‌بینی. Avoid هستم، می‌آید، بنویسید.
-
 TONE: Persian, warm, unhurried, never hyped. No «واااای»/«فوق‌العاده!». At
 most one small emoji, often none. MAX 1-2 short sentences (up to 4 only when
 resolving a real confusion). Normalize hesitation in passing. Never praise
@@ -704,11 +676,6 @@ Return STRICT JSON:
  "question_status": "off_topic" | "needs_more" | "collected",
  "extracted_answer": "<cleaned answer in their own words, or null>",
  "next_question": "<your phrasing of the next step, or null>"}"""
-
-        if self.language == 'en':
-            static_rules += "\nLANGUAGE OVERRIDE: Speak only natural, concise conversational English. " \
-                "Use English in reply and next_question. Preserve the user's meaning. " \
-                "All step rules still apply. Persian examples above are style references, not output language."
 
         system = f"""{static_rules}
 
@@ -800,7 +767,7 @@ NEXT STEP TO ASK: {next_hint}"""
             return {"question_index": qi, "suggestions": []}
         return {
             "question_index": qi,
-            "suggestions": list((IDEAS_EN if self.language == "en" else FALLBACK_INSPIRE).get(QUESTIONS[qi]["key"], [])),
+            "suggestions": list(FALLBACK_INSPIRE.get(QUESTIONS[qi]["key"], [])),
         }
 
     # ── final review ───────────────────────────────────────────
@@ -814,8 +781,6 @@ NEXT STEP TO ASK: {next_hint}"""
         return "\n".join(parts)
 
     def _review_text(self, fields) -> str:
-        if self.language == 'en':
-            return '\n'.join(f"{label}: {fields.get(q['key'], '')}" for label, q in zip(LABELS_EN, QUESTIONS))
         """The episode as a first-person, PRESENT-TENSE paragraph.
 
         Present tense is the point, not decoration: narrating the scene as

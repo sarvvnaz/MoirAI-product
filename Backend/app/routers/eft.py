@@ -1,3 +1,4 @@
+from app.services.chat_translation import translate_display, normalize_confirmation
 # eft.py
 import json
 from datetime import datetime
@@ -118,8 +119,6 @@ def submit_manual_episode(
             detail=f"Missing answers: {', '.join(missing)}",
         )
 
-    cleaned['language'] = 'en' if data.get('language') == 'en' else 'fa'
-
     summary = "\n".join(
         f"• {q['short']}: {cleaned[q['key']]}" for q in CHAT_QUESTIONS)
 
@@ -130,7 +129,6 @@ def submit_manual_episode(
         db.flush()
     fields = _state_fields(state)
     fields.update(cleaned)
-    fields["_language"] = cleaned["language"]
     fields["_summary"] = summary
     fields["_locked_by"] = "manual"
     state.fields_json = json.dumps(fields, ensure_ascii=False)
@@ -224,12 +222,13 @@ def eft_chat(
     # good (checked BEFORE any reset, which would otherwise wipe the answers).
     state = _get_chat_state(db, current_user.id)
     if _locked_by(state) == "manual":
-        return _manual_locked_result(state)
+        return translate_display(_manual_locked_result(state), data.get("language"))
 
     if not reset:
         _seed_goal_from_future_goal(db, current_user)
 
-    service = EFTChatServiceV2(db, current_user.id, language=data.get("language"))
+    service = EFTChatServiceV2(db, current_user.id)
+    message = normalize_confirmation(message, state, data.get("language"))
     result = service.process_message(message, reset=reset, importance=importance)
 
     # On final confirmation, persist the episode server-side so research data
@@ -245,8 +244,8 @@ def eft_chat(
             state = _get_chat_state(db, current_user.id)
             if state is not None:
                 fields = _state_fields(state)
-                episode = {q["key"]: fields.get(q["key"]) for q in CHAT_QUESTIONS}
-                episode["language"] = service.language
+                episode = {q["key"]: fields.get(q["key"])
+                           for q in CHAT_QUESTIONS}
                 # 1-6 rating of how much the distal goal matters. Research
                 # data in its own right (importance predicts EFT effect), so
                 # it goes into the episode rather than staying in chat state,
@@ -277,7 +276,7 @@ def eft_chat(
         _mark_locked(db, current_user.id, "chat")
 
     db.commit()
-    return result
+    return translate_display(result, data.get("language"))
 
 
 def _mirror_goal_importance(db: Session, user, value) -> None:
@@ -447,8 +446,8 @@ def eft_inspire(
     if _locked_by(state) == "manual":
         return {"question_index": 0, "suggestions": []}
 
-    service = EFTChatServiceV2(db, current_user.id, language=language)
-    return service.inspire()
+    service = EFTChatServiceV2(db, current_user.id)
+    return translate_display(service.inspire(), language)
 
 
 @router.post("/reset", status_code=status.HTTP_200_OK)

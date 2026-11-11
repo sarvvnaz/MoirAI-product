@@ -184,7 +184,7 @@ class ApiService {
               'Content-Type': 'application/json',
               'Authorization': 'Bearer $token',
             },
-            body: jsonEncode({'answers': answers, 'language': AppLanguage.instance.code}),
+            body: jsonEncode({'answers': answers}),
           )
           .timeout(_timeout);
       if (res.statusCode == 200) return null;

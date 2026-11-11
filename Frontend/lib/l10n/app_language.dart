@@ -39,6 +39,8 @@ String tr(String value, BuildContext context) {
   if (!AppLanguage.of(context).isEnglish) return value;
   final direct = englishText[value];
   if (direct != null) return direct;
+  if (value.endsWith(' = خیلی کم')) return value.split(' = ')[0] + ' = very little';
+  if (value.endsWith(' = خیلی زیاد')) return value.split(' = ')[0] + ' = very much';
   final completed = RegExp(r'^تکمیل‌شده: (\d+) از (\d+)$').firstMatch(value);
   if (completed != null) return 'Completed: ${completed[1]} of ${completed[2]}';
   if (value.startsWith('ثبت نشد (')) return 'Could not save. Please try again.';

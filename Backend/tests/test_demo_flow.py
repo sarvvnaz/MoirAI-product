@@ -151,7 +151,16 @@ def test_a_blank_goal_is_treated_as_no_goal(client, db, make_user):
     assert db.query(models.EFTChatState).filter_by(user_id=u.id).first() is None
 
 
-def test_product_chat_skips_importance_rating(client, db, make_user):
+def test_the_seeded_chatbot_resumes_at_importance_then_when(client, db,
+                                                            make_user):
+    """The behavioural half of the seeding contract.
+
+    A seeded state must look, to the chat service, exactly like a participant
+    who just answered the goal question: the importance chip row fires next,
+    and after it the conversation continues at `when` — never back to `goal`.
+    No turn logic was changed to achieve this, so this test is what proves the
+    seed lands in a state the existing machine already understands.
+    """
     from app.routers import eft as eft_router
     from app.services.eft_chat_service_v2 import EFTChatServiceV2, QUESTIONS
 
@@ -162,11 +171,20 @@ def test_product_chat_skips_importance_rating(client, db, make_user):
     db.commit()
     eft_router._seed_goal_from_future_goal(db, u)
     db.commit()
-    first = EFTChatServiceV2(db, u.id).process_message(None)
-    assert first["awaiting_importance"] is False
-    assert first["collected"][0] is True
-    assert first["question_index"] == 1
+
+    service = EFTChatServiceV2(db, u.id)
+
+    # Opening turn: the rating, not a question about the goal.
+    first = service.process_message(None)
+    assert first["awaiting_importance"] is True
+    assert first["collected"][0] is True, "the goal must already be collected"
+
+    # Rating given → the conversation moves to `when`, step 1.
+    after = service.process_message(None, importance=5)
+    assert after["awaiting_importance"] is False
+    assert after["question_index"] == 1
     assert QUESTIONS[1]["key"] == "when"
+
 
 
 def test_the_visualization_shows_the_participants_own_future_in_both_arms(
@@ -244,92 +262,3 @@ def test_optional_waiting_feedback_is_saved_without_starting_reading(client, db,
     assert saved.extra_data['chat_experience'] == 4
     assert saved.extra_data['scale_max'] == 5
     assert db.query(models.Session).filter_by(user_id=user.id).count() == 0
-
-
-def test_place_reply_cannot_drift_into_objects_or_invent_a_scene(db, make_user, monkeypatch):
-    from app.services.eft_chat_service_v2 import EFTChatServiceV2, QUESTIONS
-    user = make_user(code='STEP-PLACE')
-    db.add(models.EFTChatState(user_id=user.id, current_step=2,
-        fields_json=json.dumps({'goal': 'فارغ‌التحصیلی', 'when': 'صبح آخر ترم'})))
-    db.commit()
-    service = EFTChatServiceV2(db, user.id)
-    monkeypatch.setattr(service, '_llm_turn', lambda *args, **kwargs: {
-        'question_status': 'needs_more',
-        'reply': 'هوا خنک است. چه وسایلی همراهت است؟',
-        'extracted_answer': None,
-    })
-    first = service.process_message('دانشکده کامپیوتر، طبقه هشت')
-    assert first['question_index'] == 2
-    assert 'دقیقاً کجایی' in first['bot']
-    assert 'خنک' not in first['bot'] and 'وسایلی' not in first['bot']
-
-    monkeypatch.setattr(service, '_llm_turn', lambda *args, **kwargs: {
-        'question_status': 'collected',
-        'reply': 'هوا خنک است و صدای قدم‌ها می‌آید.',
-        'extracted_answer': 'دانشکده کامپیوتر، طبقه هشت',
-        'next_question': 'چه چیزهایی اطرافت می‌بینی؟',
-    })
-    second = service.process_message('همون طبقه هشت')
-    assert second['question_index'] == 3
-    assert second['bot'] == QUESTIONS[3]['text']
-    state = db.query(models.EFTChatState).filter_by(user_id=user.id).one()
-    fields = json.loads(state.fields_json)
-    assert fields['where'] == 'دانشکده کامپیوتر، طبقه هشت'
-    assert not fields.get('objects')
-
-
-def test_english_chat_covers_all_steps_and_saves_language(client, db, make_user, monkeypatch):
-    from app.services.eft_chat_service_v2 import EFTChatServiceV2
-    from app.services.chat_languages import QUESTIONS_EN
-    user = make_user(code='LANG-EN')
-    client.login(user)
-    monkeypatch.setattr(EFTChatServiceV2, '_llm_turn', lambda self, fields, qi, history, **kw: {
-        'question_status': 'collected', 'extracted_answer': history[-1]['content'],
-        'reply': 'Invented scene that must not be shown.', 'next_question': 'Wrong step?',
-    })
-    first = client.post('/api/eft/chat', json={'message': '', 'language': 'en'}).json()
-    assert 'long-term goal' in first['bot']
-    answers = ['Write a book', 'Next spring, morning', 'My home office',
-               'Sharing my manuscript', 'A book and desk', 'My friend', 'Proud and calm']
-    for index, answer in enumerate(answers):
-        result = client.post('/api/eft/chat', json={'message': answer, 'language': 'en'}).json()
-        if index < 6:
-            assert result['question_index'] == index + 1
-            assert result['bot'] == QUESTIONS_EN[index + 1]
-    assert 'confirm' in result['bot']
-    assert 'Goal: Write a book' in result['bot']
-    final = client.post('/api/eft/chat', json={'message': 'confirm', 'language': 'en'}).json()
-    assert final['can_start_session'] is True
-    episode = db.query(models.EFTEpisode).filter_by(user_id=user.id).one()
-    assert json.loads(episode.episode_json)['language'] == 'en'
-
-
-def test_switching_chat_language_preserves_answers_and_step(client, db, make_user, monkeypatch):
-    from app.services.eft_chat_service_v2 import EFTChatServiceV2
-    from app.services.chat_languages import QUESTIONS_EN
-    user = make_user(code='LANG-SWITCH')
-    client.login(user)
-    db.add(models.EFTChatState(user_id=user.id, current_step=2,
-        fields_json=json.dumps({'goal': 'My project', 'when': 'Next spring', '_language': 'fa'})))
-    db.commit()
-    english = client.post('/api/eft/chat', json={'message': '', 'language': 'en'}).json()
-    assert english['question_index'] == 2
-    assert english['bot'] == QUESTIONS_EN[2]
-    ideas = client.post('/api/eft/inspire?language=en').json()['suggestions']
-    assert ideas and all(not any('\u0600' <= ch <= '\u06ff' for ch in idea) for idea in ideas)
-    persian = client.post('/api/eft/chat', json={'message': '', 'language': 'fa'}).json()
-    assert persian['question_index'] == 2
-    assert 'کجایی' in persian['bot']
-    state = db.query(models.EFTChatState).filter_by(user_id=user.id).one()
-    assert json.loads(state.fields_json)['goal'] == 'My project'
-
-
-def test_manual_scene_keeps_selected_language_for_image_caption(client, db, make_user):
-    user = make_user(code='MANUAL-EN')
-    client.login(user)
-    answers = dict(zip(['goal', 'when', 'where', 'action', 'objects', 'who', 'feeling'],
-        ['My book', 'Next spring', 'At home', 'Writing', 'A desk', 'A friend', 'Proud']))
-    response = client.post('/api/eft/manual', json={'answers': answers, 'language': 'en'})
-    assert response.status_code == 200, response.text
-    episode = db.query(models.EFTEpisode).filter_by(user_id=user.id).one()
-    assert json.loads(episode.episode_json)['language'] == 'en'
